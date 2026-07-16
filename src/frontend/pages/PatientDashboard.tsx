@@ -1376,7 +1376,7 @@ const DOCTOR_ID = 'DOC-001';
                     </div>
                     <p className="text-xs font-bold text-slate-500 mb-2">Tracking active for emergency dispatch.</p>
                     <div className="h-32 w-full rounded-xl overflow-hidden bg-slate-100 relative">
-                      <LiveLocation isEmbedded={true} hideControls={true} />
+                      <LiveLocation isEmbedded={true} />
                     </div>
                   </div>
                 </div>

@@ -32,6 +32,7 @@ router.post('/dispatch', async (req: Request, res: Response) => {
     let heartRate = 120;
     let spo2 = 92;
     let temperature = 37.5;
+    let distance = '4.2 km';
     let emergencyContacts: any[] = [];
 
     // Query Patient Details
