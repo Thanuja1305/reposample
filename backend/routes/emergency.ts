@@ -14,6 +14,9 @@ const DEFAULT_CONTACTS = [
   { name: 'Family', phone: '+919550413459' }
 ];
 
+// In-memory Anti-Spam Cooldown Map (Patient UID -> Last Dispatch Timestamp)
+const cooldowns = new Map<string, number>();
+
 router.post('/dispatch', async (req: Request, res: Response) => {
   try {
     const { patientUid } = req.body;
@@ -21,9 +24,51 @@ router.post('/dispatch', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing patientUid' });
     }
 
-    console.log(`[Emergency Dispatch] Initiating Twilio Emergency Dispatch for patient ${patientUid}...`);
+    // 1. Verify Cooldown Lock (5 minutes = 300000 ms)
+    const now = Date.now();
+    const lastDispatch = cooldowns.get(patientUid);
+    if (lastDispatch && (now - lastDispatch < 5 * 60 * 1000)) {
+      const remainingSeconds = Math.ceil((5 * 60 * 1000 - (now - lastDispatch)) / 1000);
+      console.log(`[Emergency Dispatch] Cooldown active for patient ${patientUid}. ${remainingSeconds}s remaining. Rejecting request.`);
+      return res.status(429).json({
+        success: false,
+        message: `Cooldown active. Please wait ${remainingSeconds} seconds before triggering another emergency dispatch.`
+      });
+    }
 
-    // 1. Data Retrieval: Query PostgreSQL and Firebase RTDB
+    // 2. Verify Emergency State from RTDB (live state check)
+    let isEmergency = false;
+    if (!rtdbAdmin) {
+      // In local mock database fallback mode without Firebase Admin, bypass check for demo/test patients
+      console.log(`[Emergency Dispatch] Firebase Admin not initialized. Bypassing live check for demo patient.`);
+      isEmergency = true;
+    } else {
+      try {
+        const vitalsSnapshot = await rtdbAdmin.ref(`patients/${patientUid}/liveVitals`).once('value');
+        if (vitalsSnapshot.exists()) {
+          const val = vitalsSnapshot.val();
+          isEmergency = val.emergency === true || val.emergencyFlag === true || val.condition === 'Critical';
+        }
+        
+        // Also check if an active alert exists
+        const alertSnapshot = await rtdbAdmin.ref(`activeAlerts/${patientUid}`).once('value');
+        if (alertSnapshot.exists() && alertSnapshot.val()?.resolved !== true) {
+          isEmergency = true;
+        }
+      } catch (e: any) {
+        console.warn('[Emergency Dispatch] Firebase RTDB verification failed, using bypass:', e.message);
+        isEmergency = true; // Fallback to allow demo clicks
+      }
+    }
+
+    if (!isEmergency) {
+      console.log(`[Emergency Dispatch] Blocked: Patient ${patientUid} does not have an active emergency status flag in RTDB.`);
+      return res.status(400).json({ error: 'No active emergency flag found for this patient in Firebase RTDB' });
+    }
+
+    console.log(`[Emergency Dispatch] Verification passed. Initiating Twilio Emergency Dispatch for patient ${patientUid}...`);
+
+    // 3. Data Retrieval: Query PostgreSQL (Demographics) & Firebase RTDB (Live State)
     let patientName = 'Shivani';
     let age = 24;
     let gender = 'Female';
@@ -75,7 +120,7 @@ router.post('/dispatch', async (req: Request, res: Response) => {
       emergencyContacts = [...DEFAULT_CONTACTS];
     }
 
-    // Query current live vitals & coordinates from RTDB
+    // Query current live coordinates & vitals from RTDB
     try {
       if (rtdbAdmin) {
         const liveSnapshot = await rtdbAdmin.ref(`liveReadings/${patientUid}`).once('value');
@@ -92,13 +137,13 @@ router.post('/dispatch', async (req: Request, res: Response) => {
         }
       }
     } catch (rtdbErr: any) {
-      console.warn('[Emergency Dispatch] Firebase RTDB vitals fetch failed, using memory buffer averages:', rtdbErr.message);
+      console.warn('[Emergency Dispatch] Firebase RTDB vitals fetch failed, using defaults:', rtdbErr.message);
     }
 
     const mapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
     const locationString = `Latitude ${latitude.toFixed(4)} and Longitude ${longitude.toFixed(4)}`;
 
-    // 2. Initialize Twilio client
+    // 4. Initialize Twilio client
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
     const twilioVoiceFrom = process.env.TWILIO_VOICE_NUMBER || process.env.TWILIO_PHONE_NUMBER || '+17623443944';
@@ -112,7 +157,7 @@ router.post('/dispatch', async (req: Request, res: Response) => {
     console.log(`[Twilio] Initializing client using Account SID: ${twilioSid}`);
     const client = twilio(twilioSid, twilioToken);
 
-    // 3. The Ambulance Outbound Voice Call (using exact TwiML `<Say>` syntax)
+    // 5. The Ambulance Outbound Voice Call (using exact TwiML `<Say>` syntax)
     const ambulanceNumber = '+919573732216';
     const voiceTwiml = `
       <Response>
@@ -135,7 +180,7 @@ router.post('/dispatch', async (req: Request, res: Response) => {
       console.error(`[Twilio] Outbound call to Ambulance failed:`, callError.message);
     }
 
-    // 4. The Family/Contacts Outbound WhatsApp Messages & Standard SMS Alerts
+    // 6. The Family/Contacts Outbound WhatsApp Messages & Standard SMS Alerts
     const timeString = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
     const whatsappMessagePayload = `Name: ${patientName}
 Age: ${age}
@@ -200,7 +245,10 @@ Emergency services have been dispatched.`;
       });
     }
 
-    // 5. Permanent Audit Trail Logging into PostgreSQL system_logs
+    // Set Cooldown lock timestamp upon successful dispatch
+    cooldowns.set(patientUid, now);
+
+    // 7. Permanent Audit Trail Logging into PostgreSQL system_logs
     try {
       const auditDetails = JSON.stringify({
         voiceCall: { to: ambulanceNumber, status: voiceCallSid !== 'mock_call_sid_67890' ? 'placed' : 'mocked', sid: voiceCallSid },
