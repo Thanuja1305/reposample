@@ -301,7 +301,7 @@ const PatientDashboard = () => {
           const spo2 = Number(data?.spo2 || data?.SpO2 || data?.SPO2 || data?.oxygen || data?.o2 || 0);
           const temp = Number(data?.temperature || data?.temperature_c || data?.Temperature_C || data?.temp || data?.Temp || 0);
           const hum = Number(data?.humidity || data?.Humidity || data?.hum || data?.Hum || 0);
-          if (bpm > 0 || spo2 > 0 || temp > 0 || hum > 0) {
+          if (bpm > 0 || spo2 > 0 || temp > 0 || hum > 0 || data?.sensorStatus || data?.deviceStatus || data?.connected || data?.status) {
             activeData = data;
             activePath = path;
             
@@ -351,15 +351,14 @@ const PatientDashboard = () => {
       if (activeData) {
         const sensStat = activeData.sensorStatus ?? activeData.sensor ?? activeData.connected ?? activeData.sensor_status;
         if (sensStat !== undefined && sensStat !== null) {
-          if (sensStat === false || sensStat === 'false' || sensStat === 'disconnected' || sensStat === 'offline' || sensStat === 'Device Offline' || sensStat === 'ECG_NOT_CONNECTED' || sensStat !== 'CONNECTED') {
+          const sensStatStr = String(sensStat).toUpperCase();
+          if (sensStat === false || sensStat === 'false' || sensStatStr === 'DISCONNECTED' || sensStatStr === 'OFFLINE' || sensStatStr === 'DEVICE OFFLINE' || sensStatStr === 'ECG_NOT_CONNECTED') {
             sensorConnectedFromData = false;
           }
         }
         
         // Strict Firebase Single Source of Truth Checks
-        if (activeData.deviceStatus && activeData.deviceStatus !== 'ONLINE') sensorConnectedFromData = false;
-        if (activeData.ecgStatus && activeData.ecgStatus === 'NOT_CONNECTED') sensorConnectedFromData = false;
-        if (activeData.ecgQuality && activeData.ecgQuality === 'POOR_SIGNAL') sensorConnectedFromData = false;
+        if (activeData.deviceStatus && activeData.deviceStatus === 'OFFLINE') sensorConnectedFromData = false;
       }
 
       // Feature 1: Validate values
@@ -369,8 +368,9 @@ const PatientDashboard = () => {
       const temp = Number(liveData?.temperature || liveData?.temperature_c || liveData?.Temperature_C || liveData?.temp || liveData?.Temp || 0);
       const hum = Number(liveData?.humidity || liveData?.Humidity || liveData?.hum || liveData?.Hum || 0);
       
-      // If everything is exactly 0, it means it's dummy/disconnected
-      if (bpm === 0 && spo2 === 0 && temp === 0 && hum === 0) {
+      // If everything is exactly 0 and no sensorStatus is active, it means it's dummy/disconnected
+      const hasSensorStatus = !!liveData?.sensorStatus || !!liveData?.sensor_status || !!liveData?.sensor;
+      if (bpm === 0 && spo2 === 0 && temp === 0 && hum === 0 && !hasSensorStatus) {
         sensorConnectedFromData = false;
       }
 
@@ -379,35 +379,40 @@ const PatientDashboard = () => {
       if (activeData && iotConnected) {
         setConnected(true);
 
+        const sensorStatusStr = String(liveData?.sensorStatus || liveData?.sensor_status || '').toUpperCase();
+        const isFingerOff = sensorStatusStr === 'NO_FINGER' || sensorStatusStr === 'NOFINGER';
+        const isSearching = sensorStatusStr === 'SEARCHING' || sensorStatusStr === 'ACQUIRING';
+        const isError = sensorStatusStr === 'ERROR' || sensorStatusStr === 'ECG_ERROR';
+
         // ─── Real Medical Thresholds & Classification ─────────────────────────────────
-        const isBpmCritical = bpm < 50 || bpm > 140;
-        const isBpmWarning  = bpm >= 101 && bpm <= 140; // Elevated heart rate (101-140)
+        const isBpmCritical = !isFingerOff && !isSearching && !isError && (bpm < 50 || bpm > 140);
+        const isBpmWarning  = !isFingerOff && !isSearching && !isError && (bpm >= 101 && bpm <= 140); // Elevated heart rate (101-140)
         const isBpmNormal   = bpm >= 60 && bpm <= 100;
 
-        const isSpo2Critical = spo2 < 90;
-        const isSpo2Warning  = spo2 >= 90 && spo2 <= 94; // Warning (90-94)
+        const isSpo2Critical = !isFingerOff && !isSearching && !isError && (spo2 > 0 && spo2 < 90);
+        const isSpo2Warning  = !isFingerOff && !isSearching && !isError && (spo2 >= 90 && spo2 <= 94); // Warning (90-94)
         const isSpo2Normal   = spo2 >= 95;
 
-        const isTempCritical = temp > 0 && (temp < 35 || temp > 40); // Dangerous (<35 or >40)
-        const isTempWarning  = temp >= 37.3 && temp <= 40; // Fever (37.3-40)
+        const isTempCritical = !isFingerOff && !isSearching && !isError && (temp > 0 && (temp < 35 || temp > 40)); // Dangerous (<35 or >40)
+        const isTempWarning  = !isFingerOff && !isSearching && !isError && (temp >= 37.3 && temp <= 40); // Fever (37.3-40)
         const isTempNormal   = temp >= 36.1 && temp <= 37.2;
 
-        const isHumCritical = hum > 0 && (hum < 20 || hum > 75);
-        const isHumWarning  = hum > 0 && !isHumCritical && (hum < 30 || hum > 60);
+        const isHumCritical = !isFingerOff && !isSearching && !isError && (hum > 0 && (hum < 20 || hum > 75));
+        const isHumWarning  = !isFingerOff && !isSearching && !isError && (hum > 0 && !isHumCritical && (hum < 30 || hum > 60));
 
         // ─── ECG Classification ──────────────────────────────────────
-        const isEcgConnected = liveData?.ecgStatus === 'CONNECTED' && liveData?.ecgQuality === 'GOOD';
-        const ecgStatus = classifyECG(bpm, latestEcgData, isBpmCritical || isSpo2Critical || isTempCritical, isBpmWarning || isSpo2Warning || isTempWarning);
+        const isEcgConnected = !isFingerOff && !isSearching && !isError && liveData?.ecgStatus === 'CONNECTED' && liveData?.ecgQuality === 'GOOD';
+        const ecgStatus = (isFingerOff || isSearching || isError) ? 'Normal' : classifyECG(bpm, latestEcgData, isBpmCritical || isSpo2Critical || isTempCritical, isBpmWarning || isSpo2Warning || isTempWarning);
         const isEcgCritical = ecgStatus === 'Flatline' || ecgStatus === 'Critical abnormality';
         const isEcgAbnormal = ecgStatus === 'Irregular rhythm';
 
         // ─── Emergency status logic ──────────────────────────────────
-        const emergencyVal = liveData?.emergencyStatus === true || liveData?.emergency === true || String(liveData?.emergency) === 'true' || liveData?.isEmergency === true;
-        const isAbnormalVal = liveData?.isAbnormal === true || String(liveData?.isAbnormal) === 'true';
+        const emergencyVal = !isFingerOff && !isSearching && !isError && (liveData?.emergencyStatus === true || liveData?.emergency === true || String(liveData?.emergency) === 'true' || liveData?.isEmergency === true);
+        const isAbnormalVal = !isFingerOff && !isSearching && !isError && (liveData?.isAbnormal === true || String(liveData?.isAbnormal) === 'true');
 
         // Trigger emergency if any vital is critical, or ECG is critical, or emergency is flagged
-        const emergency = isBpmCritical || isSpo2Critical || isTempCritical || isHumCritical || isEcgCritical || emergencyVal;
-        const isAbnormal = isBpmWarning || isSpo2Warning || isTempWarning || isHumWarning || isEcgAbnormal || isAbnormalVal || emergency;
+        const emergency = !isFingerOff && !isSearching && !isError && (isBpmCritical || isSpo2Critical || isTempCritical || isHumCritical || isEcgCritical || emergencyVal);
+        const isAbnormal = !isFingerOff && !isSearching && !isError && (isBpmWarning || isSpo2Warning || isTempWarning || isHumWarning || isEcgAbnormal || isAbnormalVal || emergency);
 
         // ─── AI ASSESSMENT NARRATIVE GENERATOR ─────────────────────
         const possibleConditions: string[] = [];
@@ -639,7 +644,10 @@ const PatientDashboard = () => {
           alertReason: liveData?.alertReason || '',
           fingerOn: liveData?.fingerOn || false,
           timestamp: liveData?.timestamp || Date.now(),
-          isFallbackData: false
+          isFallbackData: false,
+          isFingerOff,
+          isSearching,
+          isError
         });
 
         setLoading(false);
@@ -1044,48 +1052,75 @@ const PatientDashboard = () => {
                   <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6 mb-10">
                     <VitalsCard
                       label="HEART RATE"
-                      value={(isConnected && vitals?.bpm > 0) ? vitals.bpm : '--'}
+                      value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.bpm > 0) ? vitals.bpm : '--'}
                       unit="BPM"
                       icon={Heart}
-                      isEmergency={vitals?.isBpmCritical}
-                      status={!isConnected || !vitals?.bpm ? 'optimal' : vitals?.isBpmCritical ? 'critical' : (vitals?.bpm < 60 || vitals?.bpm > 100) ? 'warning' : 'optimal'}
-                      customStatusLabel={(!isConnected || !vitals?.bpm) ? 'NO SENSOR DETECTED' : undefined}
+                      isEmergency={vitals?.isBpmCritical && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
+                      status={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.isBpmCritical ? 'critical' : (vitals?.bpm < 60 || vitals?.bpm > 100) ? 'warning' : 'optimal'}
+                      customStatusLabel={
+                        !isConnected ? 'NO SENSOR DETECTED' :
+                        vitals?.isFingerOff ? 'NO FINGER DETECTED' :
+                        vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isError ? 'SENSOR ERROR' : undefined
+                      }
                     />
                     <VitalsCard
                       label="BLOOD OXYGEN"
-                      value={(isConnected && vitals?.spo2 > 0) ? vitals.spo2 : '--'}
+                      value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.spo2 > 0) ? vitals.spo2 : '--'}
                       unit="%"
                       icon={Activity}
-                      isEmergency={vitals?.isSpo2Critical}
-                      status={!isConnected || !vitals?.spo2 ? 'optimal' : vitals?.isSpo2Critical ? 'critical' : (vitals?.spo2 < 95) ? 'warning' : 'optimal'}
-                      customStatusLabel={(!isConnected || !vitals?.spo2) ? 'NO SENSOR DETECTED' : undefined}
+                      isEmergency={vitals?.isSpo2Critical && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
+                      status={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.isSpo2Critical ? 'critical' : (vitals?.spo2 < 95) ? 'warning' : 'optimal'}
+                      customStatusLabel={
+                        !isConnected ? 'NO SENSOR DETECTED' :
+                        vitals?.isFingerOff ? 'NO FINGER DETECTED' :
+                        vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isError ? 'SENSOR ERROR' : undefined
+                      }
                     />
                     <VitalsCard
                       label="TEMPERATURE"
-                      value={(isConnected && vitals?.temperature > 0) ? Number(vitals.temperature).toFixed(1) : '--'}
+                      value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.temperature > 0) ? Number(vitals.temperature).toFixed(1) : '--'}
                       unit="°C"
                       icon={Thermometer}
-                      isEmergency={vitals?.isTempCritical}
-                      status={!isConnected || !vitals?.temperature ? 'optimal' : vitals?.isTempCritical ? 'critical' : (vitals?.temperature > 0 && (vitals?.temperature < 36.1 || vitals?.temperature > 37.2)) ? 'warning' : 'optimal'}
-                      customStatusLabel={(!isConnected || !vitals?.temperature) ? 'NO SENSOR DETECTED' : undefined}
+                      isEmergency={vitals?.isTempCritical && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
+                      status={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.isTempCritical ? 'critical' : (vitals?.temperature > 0 && (vitals?.temperature < 36.1 || vitals?.temperature > 37.2)) ? 'warning' : 'optimal'}
+                      customStatusLabel={
+                        !isConnected ? 'NO SENSOR DETECTED' :
+                        vitals?.isFingerOff ? 'NO FINGER DETECTED' :
+                        vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isError ? 'SENSOR ERROR' : undefined
+                      }
                     />
                     <VitalsCard
                       label="HUMIDITY"
-                      value={(isConnected && vitals?.humidity > 0) ? vitals.humidity : '--'}
+                      value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.humidity > 0) ? vitals.humidity : '--'}
                       unit="%"
                       icon={Droplets}
-                      isEmergency={vitals?.isHumCritical}
-                      status={!isConnected || !vitals?.humidity ? 'optimal' : vitals?.isHumCritical ? 'critical' : (vitals?.humidity < 30 || vitals?.humidity > 60) ? 'warning' : 'optimal'}
-                      customStatusLabel={(!isConnected || !vitals?.humidity) ? 'NO SENSOR DETECTED' : undefined}
+                      isEmergency={vitals?.isHumCritical && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
+                      status={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.isHumCritical ? 'critical' : (vitals?.humidity < 30 || vitals?.humidity > 60) ? 'warning' : 'optimal'}
+                      customStatusLabel={
+                        !isConnected ? 'NO SENSOR DETECTED' :
+                        vitals?.isFingerOff ? 'NO FINGER DETECTED' :
+                        vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isError ? 'SENSOR ERROR' : undefined
+                      }
                     />
                     <VitalsCard
                       label="EMERGENCY STATUS"
-                      value={!isConnected ? 'OFFLINE' : vitals?.emergency ? 'HIGH RISK' : (vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL')}
+                      value={!isConnected ? 'OFFLINE' : (vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'STANDBY' : vitals?.emergency ? 'HIGH RISK' : (vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL')}
                       unit=""
-                      icon={vitals?.emergency ? ShieldAlert : ShieldCheck}
-                      status={!isConnected ? 'optimal' : vitals?.emergency ? 'critical' : (vitals?.isAbnormal ? 'warning' : 'optimal')}
-                      customStatusLabel={!isConnected ? 'DEVICE OFFLINE' : vitals?.emergency ? 'HIGH RISK' : vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL'}
-                      isEmergency={vitals?.emergency}
+                      icon={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? ShieldCheck : vitals?.emergency ? ShieldAlert : ShieldCheck}
+                      status={!isConnected ? 'optimal' : (vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.emergency ? 'critical' : (vitals?.isAbnormal ? 'warning' : 'optimal')}
+                      customStatusLabel={
+                        !isConnected ? 'DEVICE OFFLINE' :
+                        vitals?.isFingerOff ? 'NO FINGER DETECTED' :
+                        vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isError ? 'SENSOR ERROR' :
+                        vitals?.emergency ? 'HIGH RISK' :
+                        vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL'
+                      }
+                      isEmergency={vitals?.emergency && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
                     />
                   </div>
 

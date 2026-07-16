@@ -212,13 +212,13 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
         ctx.fillStyle  = '#94a3b8';
         ctx.font       = 'bold 11px system-ui, sans-serif';
         ctx.textAlign  = 'center';
-        ctx.fillText('Sensor Not Connected', W / 2, mid - 14);
+        ctx.fillText('Waiting for ECG signal.', W / 2, mid - 14);
       } else if (!hasRealData && !isCritical) {
         ctx.shadowBlur = 0;
         ctx.fillStyle  = '#94a3b8';
         ctx.font       = 'bold 11px system-ui, sans-serif';
         ctx.textAlign  = 'center';
-        ctx.fillText('No ECG Data Detected', W / 2, mid - 14);
+        ctx.fillText('Waiting for ECG signal.', W / 2, mid - 14);
       } else if (isCritical && !hasRealData) {
         ctx.shadowBlur = 0;
         ctx.fillStyle  = '#ef4444';
