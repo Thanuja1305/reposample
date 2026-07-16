@@ -72,6 +72,7 @@ class TelemetryService {
           ecgSegment,
           latestEcgSegment: ecgSegment,
           sensorStatus,
+          deviceStatus: 'ONLINE',
           timestamp: Date.now(),
           condition: heartRate > 120 || spo2 < 90 ? 'Critical' : 'Normal',
         });

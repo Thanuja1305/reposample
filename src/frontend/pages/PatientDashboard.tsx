@@ -244,6 +244,8 @@ const DOCTOR_ID = 'DOC-001';
     let latestEcgData: number[] = [];
 
     const vitalsPaths = [
+      `liveReadings/${PATIENT_ID}`,
+      `liveReadings/HS-001`,
       `patients/${PATIENT_ID}/liveVitals`,
       `liveHealthMetrics/${PATIENT_ID}`,
       `liveHealthMetrics/HS-001`,
@@ -254,6 +256,10 @@ const DOCTOR_ID = 'DOC-001';
     ];
 
     const ecgPaths = [
+      `liveReadings/${PATIENT_ID}/ecgSegment`,
+      `liveReadings/${PATIENT_ID}/latestEcgSegment`,
+      `liveReadings/HS-001/ecgSegment`,
+      `liveReadings/HS-001/latestEcgSegment`,
       `patients/${PATIENT_ID}/ecgValues`,
       `patients/${PATIENT_ID}/ecgData/waveform`,
       `liveHealthMetrics/${PATIENT_ID}/ecgValues`,
@@ -302,12 +308,20 @@ const DOCTOR_ID = 'DOC-001';
               latestEcgData = data.ecgData.map(Number);
             } else if (Array.isArray(data?.ecg) && data.ecg.length > 0) {
               latestEcgData = data.ecg.map(Number);
+            } else if (Array.isArray(data?.latestEcgSegment) && data.latestEcgSegment.length > 0) {
+              latestEcgData = data.latestEcgSegment.map(Number);
+            } else if (Array.isArray(data?.ecgSegment) && data.ecgSegment.length > 0) {
+              latestEcgData = data.ecgSegment.map(Number);
             } else if (typeof data?.ecgValues === 'string' && data.ecgValues.trim().length > 0) {
               latestEcgData = data.ecgValues.split(',').map(Number).filter(v => !isNaN(v));
             } else if (typeof data?.ecgData === 'string' && data.ecgData.trim().length > 0) {
               latestEcgData = data.ecgData.split(',').map(Number).filter(v => !isNaN(v));
             } else if (typeof data?.ecg === 'string' && data.ecg.trim().length > 0) {
               latestEcgData = data.ecg.split(',').map(Number).filter(v => !isNaN(v));
+            } else if (typeof data?.latestEcgSegment === 'string' && data.latestEcgSegment.trim().length > 0) {
+              latestEcgData = data.latestEcgSegment.split(',').map(Number).filter(v => !isNaN(v));
+            } else if (typeof data?.ecgSegment === 'string' && data.ecgSegment.trim().length > 0) {
+              latestEcgData = data.ecgSegment.split(',').map(Number).filter(v => !isNaN(v));
             }
             break;
           }

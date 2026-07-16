@@ -3,14 +3,16 @@ import { Router, Request, Response } from 'express';
 import { handleEmergencyAlert, handleCallAmbulance, getEmergencyHistory, resolveEmergencyAlert } from '../controllers/emergencyController';
 // @ts-ignore
 import dbService from '../services/db';
+import { rtdbAdmin } from '../firebase/firebaseAdmin';
 import twilio from 'twilio';
 
 const router = Router();
 
-// Outbound numbers from the executive directive
-const AMBULANCE_NUMBER = '+919573732216';
-const FRIEND_NUMBER = '+919502536635';
-const FAMILY_NUMBER = '+919550413459';
+// Default emergency contacts to fallback on if PostgreSQL yields empty rows
+const DEFAULT_CONTACTS = [
+  { name: 'Friend', phone: '+919502536635' },
+  { name: 'Family', phone: '+919550413459' }
+];
 
 router.post('/dispatch', async (req: Request, res: Response) => {
   try {
@@ -19,20 +21,20 @@ router.post('/dispatch', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing patientUid' });
     }
 
-    console.log(`[Emergency Dispatch] Initiating emergency dispatch sequence for patient ${patientUid}...`);
+    console.log(`[Emergency Dispatch] Initiating Twilio Emergency Dispatch for patient ${patientUid}...`);
 
-    // 1. Data Profile Fetching from PostgreSQL
+    // 1. Data Retrieval: Query PostgreSQL and Firebase RTDB
     let patientName = 'Shivani';
     let age = 24;
     let gender = 'Female';
     let latitude = 17.425834776;
     let longitude = 78.329659494;
-    let heartRate = 125;
-    let spo2 = 88;
-    let temperature = 39.2;
-    let distance = '4.2 km';
-    let eta = '12 mins';
+    let heartRate = 120;
+    let spo2 = 92;
+    let temperature = 37.5;
+    let emergencyContacts: any[] = [];
 
+    // Query Patient Details
     try {
       const patientRes = await dbService.query('SELECT * FROM patients WHERE id = $1', [patientUid]);
       if (patientRes.rows && patientRes.rows.length > 0) {
@@ -51,121 +53,188 @@ router.post('/dispatch', async (req: Request, res: Response) => {
         }
       }
     } catch (e: any) {
-      console.warn('[Emergency Dispatch] Patient query failed, using demo defaults:', e.message);
+      console.warn('[Emergency Dispatch] Patients PostgreSQL query failed, using defaults:', e.message);
     }
 
+    // Query Emergency Contacts
     try {
-      const telemetryRes = await dbService.query(
-        'SELECT * FROM telemetry_history WHERE patient_id = $1 ORDER BY timestamp DESC LIMIT 1',
-        [patientUid]
-      );
-      if (telemetryRes.rows && telemetryRes.rows.length > 0) {
-        const t = telemetryRes.rows[0];
-        heartRate = t.heart_rate || heartRate;
-        spo2 = t.spo2 || spo2;
-        temperature = t.temperature_c || temperature;
-        latitude = t.latitude || latitude;
-        longitude = t.longitude || longitude;
+      const contactsRes = await dbService.query('SELECT * FROM emergency_contacts WHERE patient_id = $1', [patientUid]);
+      if (contactsRes.rows && contactsRes.rows.length > 0) {
+        emergencyContacts = contactsRes.rows.map(row => ({
+          name: row.name || row.contact_name || 'Contact',
+          phone: row.phone || row.contact_phone
+        })).filter(c => c.phone);
       }
     } catch (e: any) {
-      console.warn('[Emergency Dispatch] Telemetry query failed, using defaults:', e.message);
+      console.warn('[Emergency Dispatch] Emergency contacts PostgreSQL query failed, using defaults:', e.message);
+    }
+
+    if (emergencyContacts.length === 0) {
+      console.log('[Emergency Dispatch] No contacts found in PostgreSQL, loading fallback demo numbers.');
+      emergencyContacts = [...DEFAULT_CONTACTS];
+    }
+
+    // Query current live vitals & coordinates from RTDB
+    try {
+      if (rtdbAdmin) {
+        const liveSnapshot = await rtdbAdmin.ref(`liveReadings/${patientUid}`).once('value');
+        if (liveSnapshot.exists()) {
+          const liveVal = liveSnapshot.val();
+          heartRate = liveVal.heartRate || heartRate;
+          spo2 = liveVal.spo2 || spo2;
+          temperature = liveVal.temperature || temperature;
+          
+          if (liveVal.location) {
+            latitude = liveVal.location.latitude || latitude;
+            longitude = liveVal.location.longitude || longitude;
+          }
+        }
+      }
+    } catch (rtdbErr: any) {
+      console.warn('[Emergency Dispatch] Firebase RTDB vitals fetch failed, using memory buffer averages:', rtdbErr.message);
     }
 
     const mapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
+    const locationString = `Latitude ${latitude.toFixed(4)} and Longitude ${longitude.toFixed(4)}`;
 
     // 2. Initialize Twilio client
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
     const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-    const twilioOutbound = process.env.TWILIO_PHONE_NUMBER || '+17623443944';
+    const twilioVoiceFrom = process.env.TWILIO_VOICE_NUMBER || process.env.TWILIO_PHONE_NUMBER || '+17623443944';
+    
+    // Twilio WhatsApp Outbound number (must include whatsapp: prefix)
+    let twilioWhatsappFrom = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
+    if (!twilioWhatsappFrom.startsWith('whatsapp:')) {
+      twilioWhatsappFrom = `whatsapp:${twilioWhatsappFrom}`;
+    }
 
     console.log(`[Twilio] Initializing client using Account SID: ${twilioSid}`);
     const client = twilio(twilioSid, twilioToken);
 
-    // 3. Ambulance voice call via Twilio
+    // 3. The Ambulance Outbound Voice Call (using exact TwiML `<Say>` syntax)
+    const ambulanceNumber = '+919573732216';
     const voiceTwiml = `
       <Response>
         <Say voice="alice" language="en-US">
-          Critical Medical Emergency from HeartSync.
-          Patient ${patientName}, aged ${age}, gender ${gender}, is in critical condition.
-          Current vitals are: Heart rate is ${heartRate} B P M, and oxygen saturation is ${spo2} percent.
-          GPS coordinates: Latitude ${latitude}, Longitude ${longitude}.
-          Estimated distance is ${distance} with twelve minutes travel time.
-          Dispatching emergency responders immediately.
+          Emergency Alert. HeartSync patient ${patientName}, a ${age} year old ${gender}, is experiencing critical vitals. Current location is ${locationString}. Please dispatch immediately.
         </Say>
       </Response>
     `;
 
-    let voiceCallSid = 'mock_call_sid_12345';
+    let voiceCallSid = 'mock_call_sid_67890';
     try {
       const call = await client.calls.create({
         twiml: voiceTwiml.trim(),
-        to: AMBULANCE_NUMBER,
-        from: twilioOutbound
+        to: ambulanceNumber,
+        from: twilioVoiceFrom
       });
       voiceCallSid = call.sid;
-      console.log(`[Twilio] Call initiated to Ambulance ${AMBULANCE_NUMBER}, Call SID: ${voiceCallSid}`);
+      console.log(`[Twilio] Call successfully placed to Ambulance ${ambulanceNumber}, Call SID: ${voiceCallSid}`);
     } catch (callError: any) {
       console.error(`[Twilio] Outbound call to Ambulance failed:`, callError.message);
     }
 
-    // 4. SMS Alerts to Friends and Family
-    const smsMessage = `CRITICAL HEALTH ALERT: HeartSync emergency triggered for ${patientName}.
+    // 4. The Family/Contacts Outbound WhatsApp Messages & Standard SMS Alerts
+    const whatsappMessagePayload = `🚨 *CRITICAL HEALTH ALERT* 🚨
+HeartSync emergency triggered for *${patientName}*.
+• Age: ${age} | Gender: ${gender}
+• Current Vitals: HR ${heartRate}, SpO2 ${spo2}%
+• Live Location: ${mapsUrl}
+Emergency services (Ambulance) have been dispatched.`;
+
+    const smsMessagePayload = `CRITICAL HEALTH ALERT: HeartSync emergency triggered for ${patientName}.
 Age: ${age} | Gender: ${gender}
 Current Location: ${mapsUrl}
-Est. Distance to ER: ${distance} | ETA: ${eta}
+Est. Distance to ER: 4.2 km | ETA: 12 mins
 Emergency services have been dispatched.`;
 
-    const smsRecipientNumbers = [FRIEND_NUMBER, FAMILY_NUMBER];
-    const smsResults = [];
+    const dispatchNotificationsResults = [];
 
-    for (const num of smsRecipientNumbers) {
+    for (const contact of emergencyContacts) {
+      const cleanPhone = contact.phone.replace(/\s+/g, '');
+      const whatsappTo = cleanPhone.startsWith('whatsapp:') ? cleanPhone : `whatsapp:${cleanPhone}`;
+
+      // A. Send WhatsApp Alert
+      let whatsappSid = null;
+      let whatsappStatus = 'failed';
+      let whatsappError = null;
       try {
-        const msg = await client.messages.create({
-          body: smsMessage,
-          to: num,
-          from: twilioOutbound
+        const waMsg = await client.messages.create({
+          body: whatsappMessagePayload,
+          to: whatsappTo,
+          from: twilioWhatsappFrom
         });
-        smsResults.push({ number: num, status: 'sent', sid: msg.sid });
-        console.log(`[Twilio] SMS alert sent to emergency contact ${num}`);
-      } catch (smsError: any) {
-        smsResults.push({ number: num, status: 'failed', error: smsError.message });
-        console.error(`[Twilio] SMS alert to contact ${num} failed:`, smsError.message);
+        whatsappSid = waMsg.sid;
+        whatsappStatus = 'sent';
+        console.log(`[Twilio] WhatsApp alert sent to ${contact.name} (${whatsappTo})`);
+      } catch (waErr: any) {
+        whatsappError = waErr.message;
+        console.error(`[Twilio] WhatsApp alert to ${contact.name} failed:`, waErr.message);
       }
+
+      // B. Send standard backup SMS Alert
+      let smsSid = null;
+      let smsStatus = 'failed';
+      let smsError = null;
+      try {
+        const smsMsg = await client.messages.create({
+          body: smsMessagePayload,
+          to: cleanPhone.replace('whatsapp:', ''),
+          from: twilioVoiceFrom
+        });
+        smsSid = smsMsg.sid;
+        smsStatus = 'sent';
+        console.log(`[Twilio] Backup SMS alert sent to ${contact.name} (${cleanPhone})`);
+      } catch (smsErr: any) {
+        smsError = smsErr.message;
+        console.error(`[Twilio] Backup SMS alert to ${contact.name} failed:`, smsErr.message);
+      }
+
+      dispatchNotificationsResults.push({
+        contactName: contact.name,
+        phone: cleanPhone,
+        whatsapp: { status: whatsappStatus, sid: whatsappSid, error: whatsappError },
+        sms: { status: smsStatus, sid: smsSid, error: smsError }
+      });
     }
 
-    // 5. Audit Trail Logging into PostgreSQL
+    // 5. Permanent Audit Trail Logging into PostgreSQL system_logs
     try {
-      const logDetails = `Voice Call SID: ${voiceCallSid}. SMS Broadcasts: ${JSON.stringify(smsResults)}. Maps URL: ${mapsUrl}`;
+      const auditDetails = JSON.stringify({
+        voiceCall: { to: ambulanceNumber, status: voiceCallSid !== 'mock_call_sid_67890' ? 'placed' : 'mocked', sid: voiceCallSid },
+        notifications: dispatchNotificationsResults,
+        location: { latitude, longitude, mapsUrl }
+      });
       await dbService.query(
         `INSERT INTO system_logs (user_id, action, details)
          VALUES ($1, $2, $3)`,
-        [patientUid, 'EMERGENCY_DISPATCH', logDetails]
+        [patientUid, 'EMERGENCY_DISPATCH', auditDetails]
       );
-      console.log('[DataConnect] Success: Emergency dispatch logged in PostgreSQL system_logs.');
+      console.log('[DataConnect] Success: Emergency dispatch confirmed and logged in PostgreSQL.');
     } catch (logError: any) {
       console.error('[DataConnect] PostgreSQL system_log insert failed:', logError.message);
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Emergency services dispatched successfully',
+      message: 'Emergency services and family contacts dispatched successfully via calls, sms and whatsapp',
       dispatchDetails: {
         patientName,
         age,
         gender,
         coordinates: { latitude, longitude },
         ambulanceCallSid: voiceCallSid,
-        smsResults
+        results: dispatchNotificationsResults
       }
     });
 
   } catch (error: any) {
-    console.error('[Emergency Dispatch] Critical error processing dispatch:', error.message);
-    return res.status(500).json({ error: 'Failed to complete emergency dispatch sequence' });
+    console.error('[Emergency Dispatch] Critical failure in dispatch route:', error.message);
+    return res.status(500).json({ error: 'Failed to execute outbound emergency calls and messages' });
   }
 });
 
-// Mount existing endpoints
+// Mount other router controllers
 router.post('/send-alert', handleEmergencyAlert);
 router.post('/call-ambulance', handleCallAmbulance);
 router.get('/history', getEmergencyHistory);
