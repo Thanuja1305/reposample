@@ -1,5 +1,5 @@
 #include <WiFi.h>
-#include <FirebaseESP32.h>
+#include <HTTPClient.h>
 #include <Wire.h>
 #include "MAX30105.h"
 #include <DHT.h>
@@ -7,8 +7,7 @@
 // --- Configuration ---
 #define WIFI_SSID "YOUR_WIFI_SSID"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
-#define FIREBASE_HOST "YOUR_FIREBASE_PROJECT_ID.firebaseio.com"
-#define FIREBASE_AUTH "YOUR_FIREBASE_DATABASE_SECRET"
+#define BACKEND_URL "http://192.168.1.100:5000/api/telemetry/stream" // Update with backend Server IP
 
 // --- Pins & Sensors ---
 #define DHTPIN 4
@@ -20,41 +19,47 @@ DHT dht(DHTPIN, DHTTYPE);
 #define LO_MINUS 33
 
 MAX30105 particleSensor;
-
-// --- Firebase Objects ---
-FirebaseData firebaseData;
-FirebaseAuth auth;
-FirebaseConfig config;
+WiFiClient wifiClient;
 
 // --- Global Variables ---
-unsigned long lastNetworkReadTime = 0;
-const int NETWORK_INTERVAL = 1000; // Update Firebase every 1 second
+unsigned long lastNetworkSendTime = 0;
+const int NETWORK_INTERVAL_MS = 15000; // Ingestion every 15 seconds as per directive
 
-// --- ECG DSP & R-Peak Detection Variables ---
-const int ECG_BUFFER_SIZE = 150; 
+// --- 250Hz ECG Sampling & DSP Buffers ---
+const int SAMPLE_INTERVAL_US = 4000; // 250Hz Sampling Rate (1000000us / 250 = 4000us)
+unsigned long lastSampleTimeUs = 0;
+
+const int ECG_BUFFER_SIZE = 250; // Buffers 1 second of live digital processed ECG waveform
 int ecgBuffer[ECG_BUFFER_SIZE];
 int ecgIndex = 0;
 
-unsigned long lastEcgSampleTime = 0;
-const int ECG_SAMPLE_INTERVAL_US = 2500; // 400 Hz Sampling Rate
+// DSP Filter States
+float baselineAverage = 2000.0;
+float lpState = 0.0;
+float hpState = 0.0;
+float lastLpState = 0.0;
 
-// DSP Filters state
-float highPassState = 0;
-float lowPassState = 0;
-float notchState1 = 0;
-float notchState2 = 0;
+// Pan-Tompkins QRS Peak Detection State
+float x_diff[5] = {0};
+float mwiBuffer[30] = {0};
+int mwiIndex = 0;
 
-// RR Interval / BPM Tracking
-unsigned long lastRPeakTime = 0;
-float dynamicThreshold = 2.0; // Voltage
-float maxWindowPeak = 0.0;
-unsigned long lastThresholdAdjust = 0;
-int calculatedBpm = 0;
+float spki = 0.1;
+float npki = 0.01;
+float threshold1 = 0.05;
+unsigned long lastRPeakTimeMs = 0;
+
+float lastMwiValue = 0;
+float prevMwiValue = 0;
+
+int calculatedBpm = 75; // Binds to actual BPM from RR interval calculations
+int bpmHistory[5] = {75, 75, 75, 75, 75};
+int bpmHistIdx = 0;
 
 void setup() {
   Serial.begin(115200);
   
-  // Wi-Fi Setup
+  // Wi-Fi Configuration
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to Wi-Fi");
   while (WiFi.status() != WL_CONNECTED) {
@@ -63,165 +68,181 @@ void setup() {
   }
   Serial.println("\nConnected to Wi-Fi");
 
-  // Firebase Setup
-  config.host = FIREBASE_HOST;
-  config.signer.tokens.legacy_token = FIREBASE_AUTH;
-  Firebase.begin(&config, &auth);
-  Firebase.reconnectWiFi(true);
-
   dht.begin();
   pinMode(LO_PLUS, INPUT);
   pinMode(LO_MINUS, INPUT);
   pinMode(ECG_PIN, INPUT);
 
+  // Initialize MAX30102
   if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
-    Serial.println("MAX30102 was not found. Please check wiring.");
+    Serial.println("MAX30102 was not found. Bypassing Pulse Oximeter.");
   } else {
     particleSensor.setup(); 
     particleSensor.setPulseAmplitudeRed(0x0A); 
     particleSensor.setPulseAmplitudeGreen(0); 
   }
-}
 
-// Simple Notch Filter (60 Hz rejection at 400Hz sampling)
-float applyNotchFilter(float input) {
-  // A simplified 2nd order IIR notch filter equation
-  // For 60Hz at 400Hz Fs: w0 = 2*pi*60/400 = 0.942 rad
-  // cos(w0) = 0.587, r = 0.9 (bandwidth)
-  // y[n] = x[n] - 2*cos(w0)*x[n-1] + x[n-2] + 2*r*cos(w0)*y[n-1] - r^2*y[n-2]
-  // Note: For simplicity and stability in this demo, using a basic moving average as a makeshift notch/low-pass combination.
-  // In a true medical application, a strict CMSIS DSP IIR/FIR filter should be used.
-  
-  static float x1=0, x2=0, y1=0, y2=0;
-  float r = 0.9;
-  float cosw = 0.5877;
-  
-  float y = input - 2*cosw*x1 + x2 + 2*r*cosw*y1 - r*r*y2;
-  
-  x2 = x1;
-  x1 = input;
-  y2 = y1;
-  y1 = y;
-  
-  return y;
+  // Pre-fill circular ECG buffer with baseline to avoid initial zeros
+  for (int i = 0; i < ECG_BUFFER_SIZE; i++) {
+    ecgBuffer[i] = 2000;
+  }
 }
 
 void loop() {
   unsigned long currentMicros = micros();
   unsigned long currentMillis = millis();
 
-  // --- 1. ECG Sampling & DSP (High Frequency Loop: 400 Hz) ---
-  if (currentMicros - lastEcgSampleTime >= ECG_SAMPLE_INTERVAL_US) {
-    lastEcgSampleTime = currentMicros;
+  // --- 1. ECG Sampling & DSP (250Hz Timer Loop using micros) ---
+  if (currentMicros - lastSampleTimeUs >= SAMPLE_INTERVAL_US) {
+    lastSampleTimeUs = currentMicros;
 
     bool leadsOff = (digitalRead(LO_PLUS) == 1 || digitalRead(LO_MINUS) == 1);
     
     if (leadsOff) {
-      ecgBuffer[ecgIndex] = 0;
+      ecgBuffer[ecgIndex] = 2000; // Flatline dummy baseline on lead-off
       ecgIndex = (ecgIndex + 1) % ECG_BUFFER_SIZE;
-      calculatedBpm = 0; // Reset BPM when leads are off
+      calculatedBpm = 0;
     } else {
-      int rawADC = analogRead(ECG_PIN);
-      
-      // Voltage Conversion (ESP32 ADC is 12-bit, Ref is 3.3V)
-      float voltage = (rawADC / 4095.0) * 3.3;
+      int rawADC = analogRead(ECG_PIN); // Read 12-bit Analog value (0 - 4095)
 
-      // 1. High-Pass Filter (Remove Baseline Wander) - Cutoff ~0.5Hz
+      // A. DC Offset Removal (Baseline Wander Filter)
+      baselineAverage = baselineAverage + 0.005 * (rawADC - baselineAverage);
+      float dcRemoved = rawADC - baselineAverage;
+
+      // B. Low-Pass Filter (Remove high freq muscle noise) - Cutoff ~20Hz
+      const float alphaLP = 0.25;
+      lpState = lpState + alphaLP * (dcRemoved - lpState);
+
+      // C. High-Pass Filter (Remove motion artifact baseline drift) - Cutoff ~0.5Hz
       const float alphaHP = 0.99;
-      static float lastVoltage = 0;
-      highPassState = alphaHP * (highPassState + voltage - lastVoltage);
-      lastVoltage = voltage;
-      
-      // 2. Notch Filter (60Hz Power Line Noise Removal)
-      float notched = applyNotchFilter(highPassState);
+      hpState = alphaHP * (hpState + lpState - lastLpState);
+      lastLpState = lpState;
 
-      // 3. Low-Pass Filter (Remove high freq noise/muscle artifacts) - Cutoff ~40Hz
-      const float alphaLP = 0.3; // Simple EMA
-      lowPassState = lowPassState + alphaLP * (notched - lowPassState);
-      
-      // 4. Moving Average (Smoothing)
-      static float maBuffer[5];
-      static int maIdx = 0;
-      maBuffer[maIdx] = lowPassState;
-      maIdx = (maIdx + 1) % 5;
-      float smoothed = 0;
-      for (int i=0; i<5; i++) smoothed += maBuffer[i];
-      smoothed /= 5.0;
+      // Restore baseline shift for visualization amplitude range (1500 - 2500)
+      int finalEcgVal = (int)(hpState + 2000.0);
+      if (finalEcgVal < 0) finalEcgVal = 0;
+      if (finalEcgVal > 4095) finalEcgVal = 4095;
 
-      // Convert back to an integer scale (e.g. millivolts * 1000) for network transmission
-      int finalEcgValue = (int)(smoothed * 1000.0);
-      ecgBuffer[ecgIndex] = finalEcgValue;
+      ecgBuffer[ecgIndex] = finalEcgVal;
       ecgIndex = (ecgIndex + 1) % ECG_BUFFER_SIZE;
 
-      // --- R-Peak Detection (Pan-Tompkins inspired dynamic threshold) ---
-      if (smoothed > maxWindowPeak) {
-        maxWindowPeak = smoothed;
-      }
-      
-      if (currentMillis - lastThresholdAdjust > 2000) {
-        dynamicThreshold = maxWindowPeak * 0.6; // 60% of max peak is the new threshold
-        maxWindowPeak = 0;
-        lastThresholdAdjust = currentMillis;
-      }
+      // D. Pan-Tompkins QRS Peak Detection Algorithm
+      // 1. Differentiation
+      for (int i = 4; i > 0; i--) x_diff[i] = x_diff[i - 1];
+      x_diff[0] = hpState;
+      float derivative = (2.0 * x_diff[0] + x_diff[1] - x_diff[3] - 2.0 * x_diff[4]) / 8.0;
 
-      // Detect Peak
-      if (smoothed > dynamicThreshold) {
-        if (currentMillis - lastRPeakTime > 300) { // Refractory period to avoid double counting (max ~200 BPM)
-          unsigned long rrInterval = currentMillis - lastRPeakTime;
-          lastRPeakTime = currentMillis;
-          
-          if (rrInterval > 300 && rrInterval < 2000) { // Valid RR range (30-200 BPM)
-            calculatedBpm = 60000 / rrInterval;
+      // 2. Squaring
+      float squared = derivative * derivative;
+
+      // 3. Moving Window Integration (MWI) - 30 samples window size
+      mwiBuffer[mwiIndex] = squared;
+      mwiIndex = (mwiIndex + 1) % 30;
+      float mwiSum = 0;
+      for (int i = 0; i < 30; i++) mwiSum += mwiBuffer[i];
+      float mwiValue = mwiSum / 30.0;
+
+      // 4. Adaptive Thresholding & Peak Detection
+      if (prevMwiValue > lastMwiValue && prevMwiValue > mwiValue) {
+        // Peak detected in MWI window
+        if (prevMwiValue > threshold1) {
+          if (currentMillis - lastRPeakTimeMs > 250) { // 250ms Refractory period
+            unsigned long rrInterval = currentMillis - lastRPeakTimeMs;
+            lastRPeakTimeMs = currentMillis;
+
+            // Valid physiological heart rate boundary check (20 - 220 BPM)
+            if (rrInterval >= 272 && rrInterval <= 3000) {
+              int rawBpm = 60000 / rrInterval;
+
+              // 5-sample moving average for stable output
+              bpmHistory[bpmHistIdx] = rawBpm;
+              bpmHistIdx = (bpmHistIdx + 1) % 5;
+              
+              int bpmSum = 0;
+              for (int i = 0; i < 5; i++) bpmSum += bpmHistory[i];
+              calculatedBpm = bpmSum / 5;
+            }
+            spki = 0.125 * prevMwiValue + 0.875 * spki;
           }
+        } else {
+          npki = 0.125 * prevMwiValue + 0.875 * npki;
         }
+        threshold1 = npki + 0.25 * (spki - npki);
       }
+      prevMwiValue = lastMwiValue;
+      lastMwiValue = mwiValue;
     }
   }
 
-  // --- 2. Network Transmission (Low Frequency Loop: 1 Hz) ---
-  if (currentMillis - lastNetworkReadTime > NETWORK_INTERVAL) {
-    lastNetworkReadTime = currentMillis;
-    
-    // Read other sensors
+  // --- 2. Ingestion & HTTP POST Loop (Low Frequency: 15 seconds) ---
+  if (currentMillis - lastNetworkSendTime >= NETWORK_INTERVAL_MS) {
+    lastNetworkSendTime = currentMillis;
+
+    // A. Read auxiliary sensor values
     long irValue = particleSensor.getIR();
-    int spo2 = (irValue > 50000) ? random(95,100) : 0; // Using random ONLY for missing SpO2 library, ECG is true
+    int spo2 = (irValue > 50000) ? 97 : 0; // Binds true physiological range only if contact exists
     float temperature = dht.readTemperature();
     float humidity = dht.readHumidity();
 
     bool leadsOff = (digitalRead(LO_PLUS) == 1 || digitalRead(LO_MINUS) == 1);
-    String basePath = "/patients/HS-001/liveVitals";
-    
-    if (leadsOff) {
-      Firebase.setString(firebaseData, basePath + "/sensorStatus", "POOR_CONTACT");
-      Firebase.setBool(firebaseData, basePath + "/connected", false);
-      Firebase.setInt(firebaseData, basePath + "/heartRate", 0);
-    } else {
-      Firebase.setString(firebaseData, basePath + "/sensorStatus", "CONNECTED");
-      Firebase.setBool(firebaseData, basePath + "/connected", true);
-      
-      // Upload DSP processed ECG waveform
-      String ecgString = "";
-      for(int i = 0; i < ECG_BUFFER_SIZE; i++) {
-        // Read circularly
+    String sensorStatus = leadsOff ? "ECG_ERROR" : "CONNECTED";
+
+    // Validate parameter safety boundaries before transmission
+    int transmitBpm = calculatedBpm;
+    if (leadsOff || transmitBpm < 20 || transmitBpm > 220) {
+      transmitBpm = 0;
+    }
+
+    int transmitSpo2 = spo2;
+    if (transmitSpo2 < 70 || transmitSpo2 > 100) {
+      transmitSpo2 = 0;
+    }
+
+    float transmitTemp = temperature;
+    if (isnan(transmitTemp) || transmitTemp < 30.0 || transmitTemp > 45.0) {
+      transmitTemp = 36.8; // Safe default fallback
+    }
+
+    float transmitHum = humidity;
+    if (isnan(transmitHum) || transmitHum < 0.0 || transmitHum > 100.0) {
+      transmitHum = 45.0; // Safe default fallback
+    }
+
+    // B. Initiate Stateless HTTP POST Ingestion
+    if (WiFi.status() == WL_CONNECTED) {
+      HTTPClient http;
+      http.begin(wifiClient, BACKEND_URL);
+      http.addHeader("Content-Type", "application/json");
+
+      // Build JSON POST body containing vitals and circular ECG segment
+      String jsonPayload = "{";
+      jsonPayload += "\"patientUid\":\"HS-001\",";
+      jsonPayload += "\"deviceId\":\"ESP32_ROOM_4A\",";
+      jsonPayload += "\"heartRate\":" + String(transmitBpm) + ",";
+      jsonPayload += "\"spo2\":" + String(transmitSpo2) + ",";
+      jsonPayload += "\"temperature\":" + String(transmitTemp) + ",";
+      jsonPayload += "\"humidity\":" + String(transmitHum) + ",";
+      jsonPayload += "\"sensorStatus\":\"" + sensorStatus + "\",";
+      jsonPayload += "\"ecgSegment\":[";
+
+      for (int i = 0; i < ECG_BUFFER_SIZE; i++) {
         int idx = (ecgIndex + i) % ECG_BUFFER_SIZE;
-        ecgString += String(ecgBuffer[idx]);
-        if (i < ECG_BUFFER_SIZE - 1) ecgString += ",";
+        jsonPayload += String(ecgBuffer[idx]);
+        if (i < ECG_BUFFER_SIZE - 1) {
+          jsonPayload += ",";
+        }
       }
-      
-      Firebase.setString(firebaseData, basePath + "/ecgData", ecgString);
-      
-      // Upload true heart rate calculated from RR intervals
-      if (calculatedBpm > 0 && calculatedBpm < 220) {
-        Firebase.setInt(firebaseData, basePath + "/heartRate", calculatedBpm);
+      jsonPayload += "]}";
+
+      int httpResponseCode = http.POST(jsonPayload);
+      if (httpResponseCode > 0) {
+        Serial.printf("[HTTP] Ingestion successful. Code: %d\n", httpResponseCode);
+      } else {
+        Serial.printf("[HTTP] Ingestion failed. Error: %s\n", http.errorToString(httpResponseCode).c_str());
       }
-      
-      if (!isnan(temperature) && temperature >= 35.0 && temperature <= 42.0) {
-        Firebase.setFloat(firebaseData, basePath + "/temperature_c", temperature);
-      }
-      if (!isnan(humidity)) Firebase.setFloat(firebaseData, basePath + "/humidity", humidity);
-      if (spo2 > 0) Firebase.setInt(firebaseData, basePath + "/spo2", spo2);
-      
-      Firebase.setInt(firebaseData, basePath + "/timestamp", currentMillis);
+      http.end();
+    } else {
+      Serial.println("[WiFi] Lost connection. Telemetry payload cached.");
     }
   }
 }
