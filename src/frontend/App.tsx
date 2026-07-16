@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import EmergencySiren from './components/EmergencySiren';
 import EmergencyMonitor from './components/EmergencyMonitor';
+import EmergencyAlertModal from './components/EmergencyAlertModal';
 
 // Lazy load components
 const Landing = lazy(() => import('./pages/Landing'));
@@ -55,6 +56,7 @@ export default function App() {
       <ErrorBoundary>
         <AuthProvider>
           <EmergencySiren />
+          <EmergencyAlertModal />
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               {/* Public Routes */}
