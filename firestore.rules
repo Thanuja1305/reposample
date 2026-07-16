@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+
+    // 3. User Profiles and Roles
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false; // Block blanket reads
+      
+      allow create: if isOwner(userId) 
+        && isValidUser(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time;
+      
+      allow update: if isOwner(userId)
+        && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action: Profile Update
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'fullName', 'photoURL', 'profileCompleted', 'updatedAt', 
+            'phoneNumber', 'dob', 'gender', 'hospitalName', 
+            'specialization', 'registrationNumber', 'role', 'onboardingCompleted'
+          ])
+
+        );
+
+      function isValidUser(data) {
+        return data.fullName is string && data.fullName.size() >= 3 && data.fullName.size() <= 100
+          && data.email is string && data.email == request.auth.token.email
+          && data.role in ['patient', 'doctor']
+          && (data.role == 'doctor' ? (data.registrationNumber is string && data.hospitalName is string) : true);
+      }
+    }
+
+    // 4. Patient Collections
+    match /patients/{userId} {
+      allow get: if isOwner(userId) || isAuthorizedDoctor();
+      allow list: if isAuthorizedDoctor();
+      
+      allow create: if isOwner(userId) && incoming().uid == request.auth.uid;
+      allow update: if isOwner(userId) && incoming().uid == existing().uid;
+
+      function isAuthorizedDoctor() {
+        return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'doctor';
+      }
+    }
+
+    // 5. Doctor Collections
+    match /doctors/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      
+      allow create: if isOwner(userId) && incoming().uid == request.auth.uid;
+      allow update: if isOwner(userId) && incoming().uid == existing().uid;
+    }
+
+    // 6. Emergency Alerts
+    match /emergencyAlerts/{alertId} {
+      allow get: if isSignedIn() && (isOwner(existing().patientId) || isAuthorizedDoctor());
+      allow list: if isAuthorizedDoctor();
+      
+      allow create: if isSignedIn() && incoming().patientId == request.auth.uid;
+      allow update: if isAuthorizedDoctor() 
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'verifiedBy', 'verifiedAt']);
+    }
+
+    // 7. Live Metrics
+    match /liveHealthMetrics/{patientId} {
+      allow read: if isOwner(patientId) || isAuthorizedDoctor();
+      allow write: if isOwner(patientId); // Usually updated via bridge, but allow owner for setup
+    }
+    
+    // 8. Consultations/Assessments
+    match /patientAssessments/{assessmentId} {
+      allow get: if isSignedIn() && (isOwner(existing().userId) || isAuthorizedDoctor());
+      allow list: if isOwner(request.auth.uid) || isAuthorizedDoctor();
+      allow create: if isOwner(incoming().userId);
+    }
+  }
+}

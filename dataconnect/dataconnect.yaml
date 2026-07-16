@@ -1,0 +1,10 @@
+specVersion: "v1alpha"
+serviceId: "heartsync-data"
+schema:
+  source: "schema"
+  datasource:
+    postgresql:
+      database: "heartsync_db"
+      schema: "public"
+connectorDirs:
+  - "connector"

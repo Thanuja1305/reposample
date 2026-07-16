@@ -1,0 +1,71 @@
+# Mutations for HeartSync Data Connect
+
+mutation AddTelemetryHistory(
+  $patientId: String!
+  $deviceId: String
+  $heartRate: Int
+  $spo2: Float
+  $temperatureC: Float
+  $humidity: Float
+  $condition: String
+  $latitude: Float
+  $longitude: Float
+) {
+  telemetryHistory_insert(data: {
+    patient: { id: $patientId }
+    device: { id: $deviceId }
+    heartRate: $heartRate
+    spo2: $spo2
+    temperatureC: $temperatureC
+    humidity: $humidity
+    condition: $condition
+    latitude: $latitude
+    longitude: $longitude
+  })
+}
+
+mutation CreateAlert(
+  $id: String!
+  $patientId: String!
+  $doctorId: String
+  $severity: String
+  $status: String
+  $heartRateAtTrigger: Int
+  $spo2AtTrigger: Float
+  $tempAtTrigger: Float
+  $aiSummary: String
+  $detectedAt: Date!
+) {
+  alert_insert(data: {
+    id: $id
+    patient: { id: $patientId }
+    doctor: { id: $doctorId }
+    severity: $severity
+    status: $status
+    heartRateAtTrigger: $heartRateAtTrigger
+    spo2AtTrigger: $spo2AtTrigger
+    tempAtTrigger: $tempAtTrigger
+    aiSummary: $aiSummary
+    detectedAt: $detectedAt
+  })
+}
+
+mutation AddAiReport(
+  $patientId: String!
+  $summary: String!
+  $riskLevel: String!
+  $abnormalParameters: String
+  $recommendation: String
+  $confidence: String
+  $vitalsSnapshot: String
+) {
+  aiReport_insert(data: {
+    patient: { id: $patientId }
+    summary: $summary
+    riskLevel: $riskLevel
+    abnormalParameters: $abnormalParameters
+    recommendation: $recommendation
+    confidence: $confidence
+    vitalsSnapshot: $vitalsSnapshot
+  })
+}

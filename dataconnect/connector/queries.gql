@@ -1,0 +1,42 @@
+# Queries for HeartSync Data Connect
+
+query GetPatientHistory($patientId: String!) {
+  telemetryHistories(where: { patient: { id: { eq: $patientId } } }, orderBy: [{ timestamp: DESC }]) {
+    id
+    heartRate
+    spo2
+    temperatureC
+    humidity
+    condition
+    latitude
+    longitude
+    timestamp
+  }
+}
+
+query GetAiReports($patientId: String!) {
+  aiReports(where: { patient: { id: { eq: $patientId } } }, orderBy: [{ createdAt: DESC }]) {
+    id
+    summary
+    riskLevel
+    abnormalParameters
+    recommendation
+    confidence
+    vitalsSnapshot
+    createdAt
+  }
+}
+
+query GetPatientAlerts($patientId: String!) {
+  alerts(where: { patient: { id: { eq: $patientId } } }, orderBy: [{ detectedAt: DESC }]) {
+    id
+    severity
+    status
+    heartRateAtTrigger
+    spo2AtTrigger
+    tempAtTrigger
+    aiSummary
+    detectedAt
+    resolvedAt
+  }
+}

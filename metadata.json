@@ -1,0 +1,6 @@
+{
+  "name": "Heart Sync",
+  "description": "Real-time IoT Heart Attack Detection and Emergency Response Platform with healthcare-grade biotelemetry and advanced cardiac monitoring.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}

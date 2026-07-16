@@ -1,0 +1,5 @@
+connectorId: "heartsync-client"
+generate:
+  javascriptSdk:
+    outputDir: "../js-sdk"
+    package: "@heartsync/dataconnect"

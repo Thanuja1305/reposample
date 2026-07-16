@@ -1,0 +1,153 @@
+# HeartSync Data Connect GraphQL Schema (PostgreSQL mapping)
+
+type Hospital @table {
+  id: Int! @primaryKey
+  name: String!
+  type: String
+  emergencyStatus: String
+  bedsAvailable: Int
+  icuAvailable: Int
+  contactNumber: String
+  latitude: Float
+  longitude: Float
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type Doctor @table {
+  id: String! @primaryKey
+  email: String! @unique
+  fullName: String!
+  phoneNumber: String
+  specialization: String
+  qualification: String
+  experience: String
+  hospital: Hospital
+  licenseNumber: String
+  availability: String
+  photoUrl: String
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type Patient @table {
+  id: String! @primaryKey
+  email: String! @unique
+  fullName: String!
+  phoneNumber: String
+  dob: Date
+  gender: String
+  bloodGroup: String
+  address: String
+  status: String @default(value: "approved")
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type DoctorPatientMapping @table(name: "doctor_patient_mapping") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  doctor: Doctor!
+  patient: Patient!
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type Device @table {
+  id: String! @primaryKey
+  patient: Patient
+  deviceType: String @default(value: "ESP32")
+  status: String @default(value: "online")
+  lastHeartbeat: Date! @default(expr: "request.time")
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type TelemetryHistory @table(name: "telemetry_history") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  patient: Patient!
+  device: Device
+  heartRate: Int
+  spo2: Float
+  temperatureC: Float
+  humidity: Float
+  condition: String # 'Normal', 'Abnormal', 'Critical'
+  latitude: Float
+  longitude: Float
+  timestamp: Date! @default(expr: "request.time")
+}
+
+type EcgSegment @table(name: "ecg_segments") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  patient: Patient!
+  telemetry: TelemetryHistory
+  waveformData: String
+  status: String
+  timestamp: Date! @default(expr: "request.time")
+}
+
+type Alert @table {
+  id: String! @primaryKey # 'ALERT-timestamp'
+  patient: Patient!
+  doctor: Doctor
+  severity: String
+  status: String
+  heartRateAtTrigger: Int
+  spo2AtTrigger: Float
+  tempAtTrigger: Float
+  aiSummary: String
+  detectedAt: Date!
+  resolvedAt: Date
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type AiReport @table(name: "ai_reports") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  patient: Patient!
+  summary: String
+  riskLevel: String
+  abnormalParameters: String
+  recommendation: String
+  confidence: String
+  vitalsSnapshot: String # Serialized JSON
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type ChatHistory @table(name: "chat_history") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  senderId: String!
+  receiverId: String!
+  message: String!
+  timestamp: Date! @default(expr: "request.time")
+}
+
+type MedicalProfile @table(name: "medical_profiles") {
+  patient: Patient! @primaryKey
+  conditions: String
+  allergies: String
+  medications: String
+  emergencyNotes: String
+  updatedAt: Date! @default(expr: "request.time")
+}
+
+type EmergencyContact @table(name: "emergency_contacts") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  patient: Patient!
+  contactType: String # 'ambulance', 'family', 'friend'
+  name: String
+  phone: String
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type Notification @table {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  userId: String!
+  type: String
+  title: String!
+  message: String
+  severity: String
+  isRead: Boolean! @default(value: false)
+  createdAt: Date! @default(expr: "request.time")
+}
+
+type SystemLog @table(name: "system_logs") {
+  id: UUID! @primaryKey @default(expr: "uuidV4")
+  userId: String
+  action: String!
+  details: String
+  timestamp: Date! @default(expr: "request.time")
+}
