@@ -110,6 +110,19 @@ class TelemetryService {
           timestamp: Date.now(),
           emergency: heartRate > 120 || spo2 < 90,
         });
+
+        // Path E: Patients/{patientUid}/liveReading (New unified Realtime Database path)
+        const newPatientLiveRef = rtdbAdmin.ref(`Patients/${patientUid}/liveReading`);
+        await newPatientLiveRef.update({
+          heartRate,
+          spo2,
+          temperature,
+          humidity,
+          ecgSegment,
+          sensorStatus,
+          deviceStatus: 'ONLINE',
+          timestamp: Date.now(),
+        });
       }
     } catch (firebaseError: any) {
       console.error('[Firebase] Error updating RTDB paths:', firebaseError.message);

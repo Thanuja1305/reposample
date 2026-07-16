@@ -194,9 +194,9 @@ const PatientDashboard = () => {
   }, []);
 
   // ─── PATIENT ID for Firebase RTDB ────────────────────────────────────────
-  // Read from patients/HS-001/* (new unified RTDB structure)
-  const PATIENT_ID = 'HS-001';
-const DOCTOR_ID = 'DOC-001';
+  // Read from patients/HS-001/* or loggedInPatientUid (new unified RTDB structure)
+  const PATIENT_ID = user?.uid || 'm1uph2bX7SVd9Wbyge1AMqAmq093';
+  const DOCTOR_ID = 'DOC-001';
 
   // 🔥 REALTIME RTDB PROFILE LISTENER — patients/HS-001/profile
   useEffect(() => {
@@ -244,6 +244,8 @@ const DOCTOR_ID = 'DOC-001';
     let latestEcgData: number[] = [];
 
     const vitalsPaths = [
+      `Patients/${PATIENT_ID}/liveReading`,
+      `Patients/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
       `liveReadings/${PATIENT_ID}`,
       `liveReadings/HS-001`,
       `patients/${PATIENT_ID}/liveVitals`,
@@ -256,6 +258,8 @@ const DOCTOR_ID = 'DOC-001';
     ];
 
     const ecgPaths = [
+      `Patients/${PATIENT_ID}/liveReading/ecgSegment`,
+      `Patients/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecgSegment`,
       `liveReadings/${PATIENT_ID}/ecgSegment`,
       `liveReadings/${PATIENT_ID}/latestEcgSegment`,
       `liveReadings/HS-001/ecgSegment`,
@@ -641,7 +645,8 @@ const DOCTOR_ID = 'DOC-001';
         setLoading(false);
       } else {
         setConnected(false);
-        setVitals(null);
+        // Keep the previous values visible on disconnect
+        // setVitals(null);
         latestEcgData = [];
         setLoading(false);
       }
