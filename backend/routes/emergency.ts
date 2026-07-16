@@ -135,12 +135,13 @@ router.post('/dispatch', async (req: Request, res: Response) => {
     }
 
     // 4. The Family/Contacts Outbound WhatsApp Messages & Standard SMS Alerts
-    const whatsappMessagePayload = `🚨 *CRITICAL HEALTH ALERT* 🚨
-HeartSync emergency triggered for *${patientName}*.
-• Age: ${age} | Gender: ${gender}
-• Current Vitals: HR ${heartRate}, SpO2 ${spo2}%
-• Live Location: ${mapsUrl}
-Emergency services (Ambulance) have been dispatched.`;
+    const timeString = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+    const whatsappMessagePayload = `Name: ${patientName}
+Age: ${age}
+Gender: ${gender}
+Location(live): ${mapsUrl}
+Time: ${timeString}
+Distance: ${distance}`;
 
     const smsMessagePayload = `CRITICAL HEALTH ALERT: HeartSync emergency triggered for ${patientName}.
 Age: ${age} | Gender: ${gender}
