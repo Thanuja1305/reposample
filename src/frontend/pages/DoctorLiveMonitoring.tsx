@@ -863,7 +863,7 @@ const DoctorLiveMonitoring = () => {
                 <Menu className="w-6 h-6" />
              </button>
              <div className="min-w-0">
-                <h2 className="text-lg md:text-2xl font-black tracking-tight truncate">{isGlobalCritical ? 'EMERGENCY MONITORING' : 'Clinical Registry'}</h2>
+                <h2 className="text-lg md:text-2xl font-display font-black tracking-tight truncate">{isGlobalCritical ? 'EMERGENCY MONITORING' : 'Clinical Registry'}</h2>
                 <p className={`text-[10px] font-black uppercase tracking-[0.2em] leading-none mt-1 ${isGlobalCritical ? 'text-white/60' : 'text-slate-400'}`}>
                   {isGlobalCritical ? 'Real-time High Priority Stream' : 'Real-time Telemetry Processing'}
                 </p>

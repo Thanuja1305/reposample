@@ -196,7 +196,7 @@ const DoctorPatients = () => {
                 <Menu className="w-6 h-6" />
              </button>
              <div className="min-w-0">
-               <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tighter italic truncate">Patient Registry</h2>
+               <h2 className="text-xl md:text-2xl font-display font-black text-slate-900 tracking-tighter italic truncate">Patient Registry</h2>
                <p className="hidden md:block text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mt-1">Institutional Care Management</p>
              </div>
           </div>

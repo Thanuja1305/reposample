@@ -523,7 +523,7 @@ const DoctorDashboard = () => {
                   <Menu className="w-6 h-6" />
                </button>
                <div>
-                 <h2 className="text-xl font-bold text-slate-900 tracking-tight">Clinical Registry</h2>
+                 <h2 className="text-xl font-display font-black text-slate-900 tracking-tight">Clinical Registry</h2>
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Real-time Telemetry Processing</p>
                </div>
              </div>
@@ -746,7 +746,7 @@ const DoctorDashboard = () => {
                              {primaryPatient.patient.photoURL ? <img src={primaryPatient.patient.photoURL} className="w-full h-full object-cover" /> : primaryPatient.patient.fullName?.charAt(0) || 'P'}
                            </div>
                            <div>
-                             <h3 className="text-xl font-bold text-slate-900">{primaryPatient.patient.fullName}</h3>
+                             <h3 className="text-xl font-display font-black text-slate-900">{primaryPatient.patient.fullName}</h3>
                              <p className="text-[11px] font-medium text-slate-500 mt-1">ID: {primaryPatient.patient.id?.slice(0,6)} • {primaryPatient.patient.profile?.gender || 'Unknown'} • {primaryPatient.patient.profile?.age || '--'} Years</p>
                            </div>
                         </div>
@@ -800,7 +800,7 @@ const DoctorDashboard = () => {
                     )}
 
                     <div>
-                       <h3 className="text-sm font-bold text-slate-900 mb-4">Other Monitored Patients</h3>
+                       <h3 className="text-sm font-display font-bold text-slate-900 mb-4">Other Monitored Patients</h3>
                        <div className="bg-white border border-slate-200/60 rounded-[24px] overflow-hidden overflow-x-auto">
                           <table className="w-full text-left border-collapse min-w-[500px]">
                             <thead>
@@ -933,20 +933,20 @@ const DoctorDashboard = () => {
                     </div>
 
                     <div className="bg-slate-50/50 border border-slate-100 rounded-[24px] p-5 flex items-center justify-between mb-8 relative">
-                       <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold text-xl overflow-hidden shrink-0">
-                            {primaryPatient.patient.photoURL ? <img src={primaryPatient.patient.photoURL} className="w-full h-full object-cover" /> : primaryPatient.patient.fullName?.charAt(0) || 'P'}
-                          </div>
-                          <div>
-                            <h4 className="text-lg font-bold text-slate-900 leading-tight">{primaryPatient.patient.fullName}</h4>
-                            <p className="text-[10px] font-medium text-slate-500 mt-1">ID: {primaryPatient.patient.id?.slice(0,6)} • {primaryPatient.patient.profile?.gender || 'Unknown'} • {primaryPatient.patient.profile?.age || '--'} Years</p>
-                          </div>
-                       </div>
-                       {primaryPatient.tel?.isCritical && (
-                         <div className="px-3 py-1 bg-red-100 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-md border border-red-200 shrink-0 absolute top-5 right-5 xl:static">
-                           CRITICAL
-                         </div>
-                       )}
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 font-bold text-xl overflow-hidden shrink-0">
+                          {primaryPatient.patient.photoURL ? <img src={primaryPatient.patient.photoURL} className="w-full h-full object-cover" /> : primaryPatient.patient.fullName?.charAt(0) || 'P'}
+                        </div>
+                        <div>
+                          <h4 className="text-lg font-display font-black text-slate-900 leading-tight">{primaryPatient.patient.fullName}</h4>
+                          <p className="text-[10px] font-medium text-slate-500 mt-1">ID: {primaryPatient.patient.id?.slice(0,6)} • {primaryPatient.patient.profile?.gender || 'Unknown'} • {primaryPatient.patient.profile?.age || '--'} Years</p>
+                        </div>
+                      </div>
+                      {primaryPatient.tel?.isCritical && (
+                        <div className="px-3 py-1 bg-red-100 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-md border border-red-200 shrink-0 absolute top-5 right-5 xl:static">
+                          CRITICAL
+                        </div>
+                      )}
                     </div>
 
                     <div className="mb-8">
@@ -1053,20 +1053,20 @@ const DoctorDashboard = () => {
                       </div>
                     </div>
 
-                    <div className="flex gap-4 mt-auto pt-4 shrink-0">
-                       <button onClick={handleFalseAlert} className="flex-1 py-4 border border-[#F0A0A0] bg-orange-50/50 hover:bg-orange-50 text-orange-700 rounded-2xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-1 shadow-sm">
-                          <span className="flex items-center gap-1.5"><AlertCircle className="w-4 h-4" /> False Alert</span>
-                          <span className="text-[9px] font-medium opacity-80 normal-case tracking-normal text-center hidden xl:block">Mark this as false alert</span>
-                       </button>
-                       <button onClick={handleCallAmbulanceClick} disabled={isCallingAmbulance} className="flex-1 py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 shadow-md disabled:opacity-50">
-                          <span className="flex items-center gap-1.5">📞 {isCallingAmbulance ? 'Calling...' : 'Call Ambulance'}</span>
-                          <span className="text-[9px] font-medium opacity-80 normal-case tracking-normal text-center hidden xl:block">Trigger emergency call</span>
-                       </button>
-                       <button onClick={handleConfirmCritical} className="flex-[1.5] py-4 bg-[#D32F2F] hover:bg-[#B71C1C] text-white rounded-2xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-1 shadow-md shadow-red-900/20">
-                          <span className="flex items-center gap-1.5"><Bell className="w-4 h-4 fill-current" /> Emergency Alert</span>
-                          <span className="text-[9px] font-medium opacity-90 normal-case tracking-normal text-center hidden xl:block">Send alert to ambulance & family</span>
-                       </button>
-                    </div>
+                    <div className="flex gap-2.5 mt-auto pt-4 shrink-0 flex-wrap sm:flex-nowrap">
+                        <button onClick={handleFalseAlert} className="flex-1 py-3.5 border border-[#F0A0A0] bg-orange-50/50 hover:bg-orange-50 text-orange-700 rounded-2xl text-xs font-bold transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm min-w-[90px] px-1.5">
+                           <span className="flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5 shrink-0" /> False Alert</span>
+                           <span className="text-[8px] sm:text-[9px] font-medium opacity-80 normal-case tracking-normal text-center leading-tight">Mark this as false alert</span>
+                        </button>
+                        <button onClick={handleCallAmbulanceClick} disabled={isCallingAmbulance} className="flex-1 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-md disabled:opacity-50 min-w-[95px] px-1.5">
+                           <span className="flex items-center gap-1">📞 {isCallingAmbulance ? 'Calling...' : 'Call Ambulance'}</span>
+                           <span className="text-[8px] sm:text-[9px] font-medium opacity-80 normal-case tracking-normal text-center leading-tight">Trigger emergency call</span>
+                        </button>
+                        <button onClick={handleConfirmCritical} className="flex-[1.2] py-3.5 bg-[#D32F2F] hover:bg-[#B71C1C] text-white rounded-2xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-md shadow-red-900/20 min-w-[110px] px-1.5">
+                           <span className="flex items-center gap-1"><Bell className="w-3.5 h-3.5 fill-current shrink-0" /> Emergency Alert</span>
+                           <span className="text-[8px] sm:text-[9px] font-medium opacity-90 normal-case tracking-normal text-center leading-tight">Send alert to ambulance & family</span>
+                        </button>
+                     </div>
                   </>
                 );
              })()}

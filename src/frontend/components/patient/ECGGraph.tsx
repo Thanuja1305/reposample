@@ -9,12 +9,75 @@ interface ECGGraphProps {
 }
 
 // Predefined medically inspired ECG Template Generator (P-Q-R-S-T wave model using Gaussian components)
-const generateHeartbeatTemplate = (bpm: number, Fs: number = 250): number[] => {
+const generateHeartbeatTemplate = (type: string, bpm: number = 72, Fs: number = 250): number[] => {
   const rrIntervalMs = 60000 / bpm;
-  const samplesPerBeat = Math.floor((rrIntervalMs / 1000) * Fs);
+  let samplesPerBeat = Math.floor((rrIntervalMs / 1000) * Fs);
+  
+  if (type === 'AFib') {
+    // Irregular beats: vary samples per beat randomly between 0.75x and 1.3x of average
+    const variation = 0.75 + Math.random() * 0.55;
+    samplesPerBeat = Math.floor(samplesPerBeat * variation);
+  }
+
   const beat = new Array(samplesPerBeat).fill(2000);
 
-  // Normalized timing offsets relative to beat duration
+  if (type === 'VTach') {
+    // Broad, monomorphic, rapid QRS
+    const t_r = Math.floor(samplesPerBeat * 0.40);
+    const w_r = Math.max(3, Math.floor(samplesPerBeat * 0.08)); // Wide QRS
+    for (let i = 0; i < samplesPerBeat; i++) {
+      const val_r = 700 * Math.exp(-Math.pow((i - t_r) / w_r, 2));
+      const val_s = -400 * Math.exp(-Math.pow((i - (t_r + w_r)) / w_r, 2));
+      beat[i] = 2000 + val_r + val_s;
+    }
+    return beat;
+  }
+
+  if (type === 'AFib') {
+    // No P wave, fibrillating baseline, irregular QRS
+    const t_r = Math.floor(samplesPerBeat * 0.40);
+    const t_q = t_r - Math.max(1, Math.floor(samplesPerBeat * 0.04));
+    const t_s = t_r + Math.max(1, Math.floor(samplesPerBeat * 0.04));
+    const t_t = Math.floor(samplesPerBeat * 0.65);
+
+    const w_q = Math.max(1, Math.floor(samplesPerBeat * 0.015));
+    const w_r = Math.max(1, Math.floor(samplesPerBeat * 0.01));
+    const w_s = Math.max(1, Math.floor(samplesPerBeat * 0.015));
+    const w_t = Math.max(4, Math.floor(samplesPerBeat * 0.08));
+
+    for (let i = 0; i < samplesPerBeat; i++) {
+      const val_q = -150 * Math.exp(-Math.pow((i - t_q) / w_q, 2));
+      const val_r = 800 * Math.exp(-Math.pow((i - t_r) / w_r, 2));
+      const val_s = -250 * Math.exp(-Math.pow((i - t_s) / w_s, 2));
+      const val_t = 180 * Math.exp(-Math.pow((i - t_t) / w_t, 2));
+
+      // Fibrillation oscillations (15-25 Hz)
+      const fibOsc = 25 * Math.sin(2 * Math.PI * (18 / Fs) * i) + (Math.random() - 0.5) * 15;
+
+      beat[i] = 2000 + val_q + val_r + val_s + val_t + fibOsc;
+    }
+    return beat;
+  }
+
+  if (type === 'PVC') {
+    // Premature Wide Ventricular beat (early, bizarre, inverted T)
+    const t_r = Math.floor(samplesPerBeat * 0.25); // Early
+    const w_r = Math.max(4, Math.floor(samplesPerBeat * 0.09)); // Wide
+    const t_t = Math.floor(samplesPerBeat * 0.55);
+    const w_t = Math.max(6, Math.floor(samplesPerBeat * 0.12));
+
+    for (let i = 0; i < samplesPerBeat; i++) {
+      // Inverted R & deep S-like T
+      const val_r = 650 * Math.exp(-Math.pow((i - t_r) / w_r, 2));
+      const val_s = -450 * Math.exp(-Math.pow((i - (t_r + w_r)) / w_r, 2));
+      const val_t = -200 * Math.exp(-Math.pow((i - t_t) / w_t, 2)); // Inverted T
+
+      beat[i] = 2000 + val_r + val_s + val_t;
+    }
+    return beat;
+  }
+
+  // Normal / Bradycardia / Tachycardia (standard P-Q-R-S-T)
   const t_p = Math.floor(samplesPerBeat * 0.15);
   const t_q = Math.floor(samplesPerBeat * 0.35);
   const t_r = Math.floor(samplesPerBeat * 0.40);
@@ -146,17 +209,18 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
   const scalingHistoryRef = useRef<number[]>([]);
 
   // Local demo template state that cycles for variety in fallback mode
-  const [demoTemplate, setDemoTemplate] = useState<'NSR' | 'Bradycardia' | 'Tachycardia'>('NSR');
+  const [demoTemplate, setDemoTemplate] = useState<'NSR' | 'Bradycardia' | 'Tachycardia' | 'AFib' | 'VTach' | 'PVC'>('NSR');
 
   // Cycle demo templates every 8 seconds when fallback mode is active
   useEffect(() => {
     const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
     if (!isSensorConnected || !hasReal) {
+      const list = ['NSR', 'Bradycardia', 'Tachycardia', 'AFib', 'VTach', 'PVC'] as const;
       const interval = setInterval(() => {
         setDemoTemplate(prev => {
-          if (prev === 'NSR') return 'Bradycardia';
-          if (prev === 'Bradycardia') return 'Tachycardia';
-          return 'NSR';
+          const idx = list.indexOf(prev);
+          const nextIdx = (idx + 1) % list.length;
+          return list[nextIdx];
         });
       }, 8000);
       return () => clearInterval(interval);
@@ -167,11 +231,18 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
   useEffect(() => {
     const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
     if (isSensorConnected && !hasReal) {
-      const demoBpm = demoTemplate === 'NSR' ? 72 : demoTemplate === 'Bradycardia' ? 48 : 120;
+      const demoBpm = demoTemplate === 'Bradycardia' ? 48 : (demoTemplate === 'Tachycardia' ? 120 : (demoTemplate === 'VTach' ? 165 : (demoTemplate === 'AFib' ? 95 : 72)));
       const interval = setInterval(() => {
         if (dataQueueRef.current.length < 150) {
-          const beat = generateHeartbeatTemplate(demoBpm, 250);
-          dataQueueRef.current.push(...beat);
+          if (demoTemplate === 'PVC') {
+            // PVC pattern mixes normal sinus beats with premature ventricular contractions
+            const isPvc = Math.random() < 0.35;
+            const beat = generateHeartbeatTemplate(isPvc ? 'PVC' : 'NSR', isPvc ? 85 : 72, 250);
+            dataQueueRef.current.push(...beat);
+          } else {
+            const beat = generateHeartbeatTemplate(demoTemplate, demoBpm, 250);
+            dataQueueRef.current.push(...beat);
+          }
         }
       }, 150);
       return () => clearInterval(interval);
@@ -380,7 +451,13 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
         ctx.fillStyle  = '#f8fafc';
         ctx.font       = 'bold 9px system-ui, sans-serif';
         ctx.textAlign  = 'left';
-        const label = demoTemplate === 'NSR' ? 'NORMAL SINUS RHYTHM (72 BPM)' : demoTemplate === 'Bradycardia' ? 'BRADYCARDIA (48 BPM)' : 'TACHYCARDIA (120 BPM)';
+        let label = 'NORMAL SINUS RHYTHM (72 BPM)';
+        if (demoTemplate === 'Bradycardia') label = 'SINUS BRADYCARDIA (48 BPM)';
+        else if (demoTemplate === 'Tachycardia') label = 'SINUS TACHYCARDIA (120 BPM)';
+        else if (demoTemplate === 'AFib') label = 'ATRIAL FIBRILLATION (95 BPM)';
+        else if (demoTemplate === 'VTach') label = 'VENTRICULAR TACHYCARDIA (165 BPM)';
+        else if (demoTemplate === 'PVC') label = 'PVC PATTERN (85 BPM)';
+
         ctx.fillText(`DEMONSTRATION DATA - ${label} (FALLBACK MODE)`, 16, 23);
       }
 

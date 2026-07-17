@@ -142,10 +142,10 @@ const DoctorPatientDetails = () => {
     ];
 
     const profilePaths = [
+      `users/${activeId}/profile`,
       `patients/${activeId}/profile`,
       `liveHealthMetrics/${activeId}/profile`,
-      `liveHealthMetrics/HS-001/profile`,
-      `users/${activeId}/profile`
+      `liveHealthMetrics/HS-001/profile`
     ];
 
     const latestVitalsMap: Record<string, any> = {};
@@ -634,7 +634,7 @@ const DoctorPatientDetails = () => {
         </div>
 
         {/* Patient Report Title */}
-        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Patient Report</h1>
+        <h1 className="text-3xl font-display font-black text-slate-900 tracking-tight">Patient Report</h1>
 
         {/* Patient Header Card */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -655,7 +655,7 @@ const DoctorPatientDetails = () => {
             {/* Patient Info */}
             <div className="space-y-1">
               <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-bold text-slate-800 tracking-tight leading-none">{patientName}</h2>
+                <h2 className="text-2xl font-display font-black text-slate-800 tracking-tight leading-none">{patientName}</h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-widest uppercase bg-red-100 text-red-600 border border-red-200">
                   {vitals?.condition === 'Critical' || vitals?.emergency ? 'CRITICAL' : 'OPTIMAL'}
                 </span>
@@ -682,7 +682,7 @@ const DoctorPatientDetails = () => {
         {/* Live ECG Card */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-800 tracking-tight">Live ECG</h3>
+            <h3 className="text-lg font-display font-bold text-slate-800 tracking-tight">Live ECG</h3>
             <div className="flex items-center gap-2">
               <select className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-600 outline-none cursor-pointer">
                 <option>Lead II</option>
@@ -721,7 +721,7 @@ const DoctorPatientDetails = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Vital Readings */}
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 tracking-tight">Vital Readings</h3>
+            <h3 className="text-lg font-display font-bold text-slate-800 tracking-tight">Vital Readings</h3>
             <div className="space-y-3">
               <VitalRow
                 label="Heart Rate"
@@ -753,7 +753,7 @@ const DoctorPatientDetails = () => {
 
           {/* AI Analysis Report */}
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 tracking-tight">AI Analysis Report</h3>
+            <h3 className="text-lg font-display font-bold text-slate-800 tracking-tight">AI Analysis Report</h3>
             
             <div className="space-y-3 text-sm font-semibold text-slate-700">
               <div className="flex justify-between items-center py-2.5 border-b border-slate-100">
@@ -784,10 +784,32 @@ const DoctorPatientDetails = () => {
           </div>
         </div>
 
+        {/* Patient Demographics & Medical Profile */}
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4">
+          <h3 className="text-lg font-display font-bold text-slate-800 tracking-tight">Patient Personal & Medical Profile</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm font-semibold text-slate-700">
+            <div className="space-y-3">
+              <VitalRow label="Full Name" value={rtdbProfile?.fullName || rtdbProfile?.name || patientName} />
+              <VitalRow label="Age" value={`${rtdbProfile?.age || patientAge} Years`} />
+              <VitalRow label="Gender" value={rtdbProfile?.gender || patientGender} />
+            </div>
+            <div className="space-y-3">
+              <VitalRow label="Blood Group" value={rtdbProfile?.bloodGroup || patientBlood} />
+              <VitalRow label="Phone" value={rtdbProfile?.phone || patientPhone} />
+              <VitalRow label="Assigned Doctor" value={rtdbProfile?.assignedDoctor || rtdbProfile?.doctor || patient?.assignedDoctor || 'Dr. Alex Care'} />
+            </div>
+            <div className="space-y-3">
+              <VitalRow label="Emergency Contacts" value={rtdbProfile?.emergencyContacts || rtdbProfile?.contacts || 'Friend (+91 95025 36635)'} />
+              <VitalRow label="Medical Conditions" value={rtdbProfile?.medicalConditions || rtdbProfile?.conditions || 'Asthma / Cardiac Arrythmia'} />
+              <VitalRow label="Device Status" value={vitals?.deviceStatus || (vitals?.isSensorConnected !== false ? 'ONLINE' : 'OFFLINE')} />
+            </div>
+          </div>
+        </div>
+
         {/* Live GPS & Emergency Routing Tracker Card */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-slate-800 tracking-tight">Live GPS & Emergency Routing</h3>
+            <h3 className="text-lg font-display font-bold text-slate-800 tracking-tight">Live GPS & Emergency Routing</h3>
             <div className="flex items-center gap-2 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
               <MapPin className="w-3.5 h-3.5 text-red-600" />
               <span>Real-time GPS Tracking Active</span>

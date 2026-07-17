@@ -219,17 +219,24 @@ const PatientDashboard = () => {
   const PATIENT_ID = user?.uid || 'm1uph2bX7SVd9Wbyge1AMqAmq093';
   const DOCTOR_ID = 'DOC-001';
 
-  // 🔥 REALTIME RTDB PROFILE LISTENER — patients/HS-001/profile
+  // 🔥 REALTIME RTDB PROFILE LISTENER — users/${PATIENT_ID}/profile (with patients/ fallback)
   useEffect(() => {
-    const profileRtdbRef = ref(rtdb, `patients/${PATIENT_ID}/profile`);
+    const profileRtdbRef = ref(rtdb, `users/${PATIENT_ID}/profile`);
     const unsubProfile = onValue(profileRtdbRef, (snap) => {
       if (snap.exists()) {
         const p = snap.val();
         setRtdbProfile(p);
+      } else {
+        const fallbackRef = ref(rtdb, `patients/${PATIENT_ID}/profile`);
+        onValue(fallbackRef, (fallbackSnap) => {
+          if (fallbackSnap.exists()) {
+            setRtdbProfile(fallbackSnap.val());
+          }
+        }, { onlyOnce: true });
       }
     });
     return () => unsubProfile();
-  }, []);
+  }, [PATIENT_ID]);
 
   // 🔥 REALTIME RTDB AI DIAGNOSIS LISTENER — patients/HS-001/aiDiagnosis
   useEffect(() => {
@@ -240,7 +247,7 @@ const PatientDashboard = () => {
       }
     });
     return () => unsubDiag();
-  }, []);
+  }, [PATIENT_ID]);
 
   // 🔥 FIREBASE CONNECTION STATE LISTENER
   useEffect(() => {
@@ -674,9 +681,25 @@ const PatientDashboard = () => {
         setLoading(false);
       } else {
         setConnected(false);
-        // Keep the previous values visible on disconnect
-        // setVitals(null);
         latestEcgData = [];
+        setVitals({
+          bpm: '--',
+          spo2: '--',
+          humidity: '--',
+          temperature: '--',
+          temperature_c: '--',
+          emergency: false,
+          isAbnormal: false,
+          ecgData: [],
+          ecgStatus: 'Normal',
+          isFallbackData: false,
+          isFingerOff: false,
+          isSearching: false,
+          isError: false,
+          deviceStatus: 'OFFLINE',
+          patientName: rtdbProfile?.fullName || rtdbProfile?.name || 'Patient',
+          serialNumber: PATIENT_ID
+        });
         setLoading(false);
       }
     };
@@ -1158,23 +1181,15 @@ const PatientDashboard = () => {
                       </div>
                     </div>
                     
-                    {(!isConnected || !vitals?.ecgData || vitals.ecgData.length === 0) ? (
-                      <div className="h-48 md:h-64 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 backdrop-blur-md relative z-10">
-                        <Activity className="w-8 h-8 text-slate-300 mb-3" />
-                        <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest">NO ECG DETECTED</h4>
-                        <p className="text-xs text-slate-400 mt-1 font-medium">Poor Signal / Please connect ECG sensor.</p>
-                      </div>
-                    ) : (
-                      <div className="h-48 md:h-64">
-                        <ECGGraph
-                          ecgData={vitals?.ecgData || []}
-                          bpm={vitals?.bpm ?? 0}
-                          isSensorConnected={isConnected}
-                          isEmergency={vitals?.emergency || vitals?.isAbnormal}
-                          isCritical={vitals?.emergency}
-                        />
-                      </div>
-                    )}
+                    <div className="h-48 md:h-64">
+                      <ECGGraph
+                        ecgData={vitals?.ecgData || []}
+                        bpm={vitals?.bpm ?? 0}
+                        isSensorConnected={isConnected}
+                        isEmergency={vitals?.emergency || vitals?.isAbnormal}
+                        isCritical={vitals?.emergency}
+                      />
+                    </div>
                   </div>
                 </>
               )}
