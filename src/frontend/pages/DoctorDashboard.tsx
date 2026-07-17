@@ -160,10 +160,10 @@ const DoctorDashboard = () => {
       limit(20)
     );
 
-    getDocs(qPatients).then((snap) => {
+    const unsubPatients = onSnapshot(qPatients, (snap) => {
       setPatients(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
-    }).catch(err => {
+    }, (err) => {
       console.warn("Failed to fetch patients list:", err);
       setLoading(false);
     });
@@ -215,6 +215,7 @@ const DoctorDashboard = () => {
     });
 
     return () => {
+      if (typeof unsubPatients === 'function') unsubPatients();
       if (typeof unsubAlerts === 'function') unsubAlerts();
       if (typeof unsubRtdbPatients === 'function') unsubRtdbPatients();
       if (typeof unsubRtdbUsers === 'function') unsubRtdbUsers();

@@ -53,10 +53,26 @@ router.post('/dispatch', async (req: Request, res: Response) => {
           isEmergency = val.emergency === true || val.emergencyFlag === true || val.condition === 'Critical';
         }
         
-        // Also check if an active alert exists
+        const liveSnapshot = await rtdbAdmin.ref(`liveReadings/${patientUid}`).once('value');
+        if (liveSnapshot.exists()) {
+          const val = liveSnapshot.val();
+          if (val.emergency === true || val.condition === 'Critical') {
+            isEmergency = true;
+          }
+        }
+
         const alertSnapshot = await rtdbAdmin.ref(`activeAlerts/${patientUid}`).once('value');
         if (alertSnapshot.exists() && alertSnapshot.val()?.resolved !== true) {
           isEmergency = true;
+        }
+
+        const alertsSnapshot = await rtdbAdmin.ref('alerts').once('value');
+        if (alertsSnapshot.exists()) {
+          const alertsVal = alertsSnapshot.val();
+          const hasActiveAlert = Object.values(alertsVal).some((a: any) => a && a.patientId === patientUid && !a.resolved);
+          if (hasActiveAlert) {
+            isEmergency = true;
+          }
         }
       } catch (e: any) {
         console.warn('[Emergency Dispatch] Firebase RTDB verification failed, using bypass:', e.message);

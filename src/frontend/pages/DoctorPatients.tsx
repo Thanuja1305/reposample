@@ -65,35 +65,41 @@ const DoctorPatients = () => {
       where('status', '==', 'approved')
     );
 
-    const fetchPatients = async () => {
-      try {
-        const snap = await getDocs(q);
-        const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPatients(docs);
-        setLoading(false);
-      } catch (err) {
-        console.warn("Failed to fetch patients:", err);
-        setLoading(false);
-      }
-    };
-    fetchPatients();
+    // Real-time listener for patients registry
+    const unsubPatients = onSnapshot(q, (snap) => {
+      const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPatients(docs);
+      setLoading(false);
+    }, (err) => {
+      console.warn("Failed to listen to patients:", err);
+      setLoading(false);
+    });
 
-    // Listen to live vitals (same as PatientDashboard) and fallback to legacy path
-    const PATIENT_ID = 'HS-001';
-    const liveVitalsRef = ref(rtdb, `patients/${PATIENT_ID}/liveVitals`);
-    const fallbackRef = ref(rtdb, 'liveHealthMetrics/HS-001');
-    const unsubVitals = onValue(liveVitalsRef, (snapshot) => {
+    // Real-time listener for all patient vitals
+    const liveReadingsRef = ref(rtdb, 'liveReadings');
+    const unsubVitals = onValue(liveReadingsRef, (snapshot) => {
       if (snapshot.exists()) {
-        setVitalsMap(snapshot.val());
+        const readings = snapshot.val();
+        
+        // Also listen and merge legacy paths for compatibility
+        const legacyRef = ref(rtdb, 'patients');
+        onValue(legacyRef, (legSnap) => {
+          const legData = legSnap.exists() ? legSnap.val() : {};
+          const merged: Record<string, any> = {};
+          for (const [pid, pData] of Object.entries(legData)) {
+            if (pData && (pData as any).liveVitals) {
+              merged[pid] = (pData as any).liveVitals;
+            }
+          }
+          setVitalsMap({ ...merged, ...readings });
+        }, { onlyOnce: true });
       } else {
-        // fallback for older data structure
-        const unsubFallback = onValue(fallbackRef, (snap) => {
-          if (snap.exists()) setVitalsMap(snap.val());
-        });
+        setVitalsMap({});
       }
     });
 
     return () => {
+      unsubPatients();
       unsubVitals();
     };
   }, []);

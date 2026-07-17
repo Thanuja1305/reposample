@@ -546,6 +546,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const ensureDefaultPatientNode = async () => {
+    try {
+      const defaultPatientUid = 'm1uph2bX7SVd9Wbyge1AMqAmq093';
+
+      // 1. Write to RTDB users/{uid}
+      await update(ref(rtdb, `users/${defaultPatientUid}`), {
+        uid: defaultPatientUid,
+        role: 'patient',
+        status: 'approved',
+        onboarded: true,
+        onboardingCompleted: true,
+        createdAt: Date.now(),
+        profile: {
+          name: "Shivani",
+          age: "24",
+          gender: "Female",
+          email: "patient@heartsync.health",
+          phoneNumber: "+1 (555) 987-6543",
+          address: "Flat 402, Block A, DLF Cyber City Road, Gachibowli, Hyderabad, Telangana, 500032, India"
+        }
+      });
+
+      // 2. Write to RTDB patients/{uid}
+      await update(ref(rtdb, `patients/${defaultPatientUid}`), {
+        uid: defaultPatientUid,
+        role: 'patient',
+        status: 'approved',
+        createdAt: Date.now(),
+        profile: {
+          fullName: "Shivani",
+          name: "Shivani",
+          age: "24",
+          gender: "Female",
+          email: "patient@heartsync.health",
+          phoneNumber: "+1 (555) 987-6543",
+          locationAddress: "Flat 402, Block A, DLF Cyber City Road, Gachibowli, Hyderabad, Telangana, 500032, India"
+        }
+      });
+
+      // 3. Write to Firestore users/{uid}
+      const { doc, setDoc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'users', defaultPatientUid), {
+        uid: defaultPatientUid,
+        role: 'patient',
+        status: 'approved',
+        onboarded: true,
+        onboardingCompleted: true,
+        name: "Shivani",
+        email: "patient@heartsync.health",
+        phoneNumber: "+1 (555) 987-6543"
+      }, { merge: true });
+
+      console.log("🔥 HeartSync default patient nodes initialized successfully");
+    } catch (e: any) {
+      console.warn("Failed to initialize default patient nodes:", e.message);
+    }
+  };
+
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
     let unsubscribeAuth: (() => void) | null = null;
@@ -570,6 +628,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
         return;
       }
+
+      // Automatically initialize default patient nodes
+      ensureDefaultPatientNode();
 
       // If we have a cached profile that matches the user, we can immediately stop loading.
       // Otherwise, clear the profile and set loading state to true.
