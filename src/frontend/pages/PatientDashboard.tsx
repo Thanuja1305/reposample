@@ -181,13 +181,55 @@ const PatientDashboard = () => {
     setShowEmergencyPopup(false);
     if (showToast) showToast('Emergency confirmed. Notifying doctors.', 'error');
     try {
+      const now = Date.now();
+      const resolvedProfile = profileRef.current || rtdbProfile;
+      
+      // 1. Update Realtime Database liveReading path
+      await update(ref(rtdb, `users/${PATIENT_ID}/liveReading`), {
+        emergency: true,
+        condition: 'Critical',
+        deviceStatus: isConnected ? 'ONLINE' : 'OFFLINE',
+        timestamp: now
+      });
+
+      // Legacy fallback paths
       await update(ref(rtdb, `patients/${PATIENT_ID}/liveVitals`), {
         emergency: true,
         condition: 'Critical',
-        timestamp: Date.now()
+        timestamp: now
+      });
+
+      await update(ref(rtdb, `Patients/${PATIENT_ID}/liveReading`), {
+        emergency: true,
+        condition: 'Critical',
+        timestamp: now
+      });
+
+      // 2. Call backend send-alert endpoint
+      const payload = {
+        patientId: PATIENT_ID,
+        patientName: resolvedProfile?.fullName || resolvedProfile?.name || resolvedProfile?.displayName || user?.displayName || 'Patient',
+        age: resolvedProfile?.age || 24,
+        gender: resolvedProfile?.gender || 'Unknown',
+        bloodGroup: resolvedProfile?.bloodGroup || '--',
+        heartRate: vitals?.bpm !== '--' ? Number(vitals?.bpm || 72) : 72,
+        spo2: vitals?.spo2 !== '--' ? Number(vitals?.spo2 || 98) : 98,
+        temperature_c: vitals?.temperature !== '--' ? Number(vitals?.temperature || 36.8) : 36.8,
+        humidity: vitals?.humidity !== '--' ? Number(vitals?.humidity || 50) : 50,
+        ecgStatus: vitals?.ecgStatus || 'Normal',
+        latitude: locationCoords?.lat || 17.425834776,
+        longitude: locationCoords?.lng || 78.329659494,
+        deviceStatus: isConnected ? 'ONLINE' : 'OFFLINE',
+        timestamp: now
+      };
+
+      await fetch('http://localhost:5000/api/emergency/send-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
     } catch (e) {
-      console.warn(e);
+      console.warn("Failed to confirm manual emergency:", e);
     }
   };
 

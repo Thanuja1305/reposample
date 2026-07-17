@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { onSnapshot, collection, query, where, limit } from 'firebase/firestore';
-import { db } from '../../shared/lib/firebase';
+import { ref, onValue } from 'firebase/database';
+import { db, rtdb } from '../../shared/lib/firebase';
 import { Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 
 // Synthesized Offline Web Audio API Siren (bulletproof, works offline, no network calls)
@@ -29,46 +29,28 @@ class WebAudioSiren {
       this.gain.connect(this.ctx.destination);
       this.osc.start();
 
-      let high = true;
       this.timer = setInterval(() => {
         if (!this.ctx || !this.osc) return;
-        const targetFreq = high ? 600 : 900;
-        try {
-          this.osc.frequency.cancelScheduledValues(this.ctx.currentTime);
-          this.osc.frequency.setValueAtTime(this.osc.frequency.value, this.ctx.currentTime);
-          this.osc.frequency.linearRampToValueAtTime(targetFreq, this.ctx.currentTime + 0.4);
-        } catch (err) {}
-        high = !high;
-      }, 450);
+        const now = this.ctx.currentTime;
+        this.osc.frequency.setValueAtTime(600, now);
+        this.osc.frequency.linearRampToValueAtTime(1000, now + 0.4);
+        this.osc.frequency.linearRampToValueAtTime(600, now + 0.8);
+      }, 800);
     } catch (e) {
-      console.warn("Failed to start Web Audio Siren:", e);
+      console.warn("WebAudioSiren start failed:", e);
     }
   }
 
   stop() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    if (this.timer) clearInterval(this.timer);
     try {
-      if (this.osc) {
-        this.osc.stop();
-        this.osc.disconnect();
-        this.osc = null;
-      }
-      if (this.gain) {
-        this.gain.disconnect();
-        this.gain = null;
-      }
-      if (this.ctx) {
-        if (this.ctx.state !== 'closed') {
-          this.ctx.close();
-        }
-        this.ctx = null;
-      }
-    } catch (e) {
-      // Ignore stop errors
-    }
+      if (this.osc) this.osc.stop();
+      if (this.ctx) this.ctx.close();
+    } catch (e) {}
+    this.ctx = null;
+    this.osc = null;
+    this.gain = null;
+    this.timer = null;
   }
 }
 
@@ -85,16 +67,18 @@ const EmergencySiren = () => {
       return;
     }
 
-    // Listen for any active emergency alerts that are PENDING
-    const q = query(
-      collection(db, 'emergencyAlerts'),
-      where('status', '==', 'PENDING'),
-      limit(5)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const alerts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setActiveAlerts(alerts);
+    // Listen to RTDB alerts
+    const alertsRef = ref(rtdb, 'alerts');
+    const unsubscribe = onValue(alertsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        const activeList = Object.values(val).filter((a: any) => 
+          a && a.resolved !== true && (a.status === 'pending' || a.status === 'critical' || a.severity === 'critical')
+        );
+        setActiveAlerts(activeList);
+      } else {
+        setActiveAlerts([]);
+      }
     });
 
     return () => unsubscribe();

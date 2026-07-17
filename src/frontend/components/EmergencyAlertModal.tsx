@@ -151,6 +151,7 @@ export default function EmergencyAlertModal() {
   const [isMuted, setIsMuted] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState<'idle' | 'sending' | 'success' | 'failed'>('idle');
   const [activePatientUid, setActivePatientUid] = useState<string>('HS-001');
+  const [activeAlertId, setActiveAlertId] = useState<string>('');
 
   // Real-time vital metrics states
   const [vitals, setVitals] = useState<any>({
@@ -176,21 +177,28 @@ export default function EmergencyAlertModal() {
     const isDoctor = profile?.role === 'doctor';
     
     if (isDoctor) {
-      // Listen to the entire activeAlerts node
-      const alertsRef = ref(rtdb, 'activeAlerts');
+      // Listen to the entire alerts node
+      const alertsRef = ref(rtdb, 'alerts');
       const unsubAlerts = onValue(alertsRef, (snapshot) => {
         if (snapshot.exists()) {
           const val = snapshot.val();
-          // Find first unresolved alert
-          const activeId = Object.keys(val).find(key => val[key] && val[key].resolved !== true);
+          // Find first unresolved pending alert
+          const activeId = Object.keys(val).find(key => {
+            const a = val[key];
+            return a && a.resolved !== true && (a.status === 'pending' || a.status === 'critical' || a.severity === 'critical');
+          });
           if (activeId) {
-            setActivePatientUid(activeId);
+            const activeAlert = val[activeId];
+            setActiveAlertId(activeId);
+            setActivePatientUid(activeAlert.patientId || activeId);
             setIsOpen(true);
           } else {
             setIsOpen(false);
+            setActiveAlertId('');
           }
         } else {
           setIsOpen(false);
+          setActiveAlertId('');
         }
       });
       return () => {
@@ -198,20 +206,27 @@ export default function EmergencyAlertModal() {
         alarmSound.stop();
       };
     } else {
-      // Patient mode: listen only to own alert
+      // Patient mode: listen only to own alert under alerts
       const myUid = user.uid || 'HS-001';
       setActivePatientUid(myUid);
-      const alertRef = ref(rtdb, `activeAlerts/${myUid}`);
-      const unsubAlert = onValue(alertRef, (snapshot) => {
+      const alertsRef = ref(rtdb, 'alerts');
+      const unsubAlert = onValue(alertsRef, (snapshot) => {
         if (snapshot.exists()) {
           const val = snapshot.val();
-          if (val && val.resolved !== true) {
+          const activeId = Object.keys(val).find(key => {
+            const a = val[key];
+            return a && a.patientId === myUid && a.resolved !== true && (a.status === 'pending' || a.status === 'critical' || a.severity === 'critical');
+          });
+          if (activeId) {
+            setActiveAlertId(activeId);
             setIsOpen(true);
           } else {
             setIsOpen(false);
+            setActiveAlertId('');
           }
         } else {
           setIsOpen(false);
+          setActiveAlertId('');
         }
       });
       return () => {
@@ -309,6 +324,13 @@ export default function EmergencyAlertModal() {
       // Clear alert from RTDB activeAlerts
       await set(ref(rtdb, `activeAlerts/${activePatientUid}`), null);
 
+      if (activeAlertId) {
+        await update(ref(rtdb, `alerts/${activeAlertId}`), {
+          resolved: true,
+          status: 'resolved'
+        });
+      }
+
       // Reset patient's emergency state in RTDB paths
       await update(ref(rtdb, `patients/${activePatientUid}/liveVitals`), {
         emergency: false,
@@ -317,6 +339,12 @@ export default function EmergencyAlertModal() {
         timestamp: Date.now()
       });
       await update(ref(rtdb, `Patients/${activePatientUid}/liveReading`), {
+        isAbnormal: false,
+        emergency: false,
+        condition: 'Normal',
+        timestamp: Date.now()
+      });
+      await update(ref(rtdb, `users/${activePatientUid}/liveReading`), {
         isAbnormal: false,
         emergency: false,
         condition: 'Normal',
@@ -343,6 +371,14 @@ export default function EmergencyAlertModal() {
 
       if (res.ok) {
         setDispatchStatus('success');
+        
+        if (activeAlertId) {
+          await update(ref(rtdb, `alerts/${activeAlertId}`), {
+            resolved: true,
+            status: 'dispatched'
+          });
+        }
+
         setTimeout(() => {
           handleIgnore(); // Clear alert & close modal after success
         }, 2000);
