@@ -360,8 +360,8 @@ export default function EmergencyAlertModal() {
     try {
       setDispatchStatus('sending');
 
-      // Make dispatch POST request to backend API
-      const res = await fetch('http://localhost:5000/api/emergency/dispatch', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const res = await fetch(`${apiUrl}/api/emergency/dispatch`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

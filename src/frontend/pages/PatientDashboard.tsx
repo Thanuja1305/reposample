@@ -223,7 +223,8 @@ const PatientDashboard = () => {
         timestamp: now
       };
 
-      await fetch('http://localhost:5000/api/emergency/send-alert', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      await fetch(`${apiUrl}/api/emergency/send-alert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -628,7 +629,8 @@ const PatientDashboard = () => {
               timestamp: new Date().toISOString()
             };
 
-            fetch('http://localhost:5000/api/ai/diagnose', {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            fetch(`${apiUrl}/api/ai/diagnose`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(payload)
