@@ -3,6 +3,7 @@
 import { ref, set, update, get } from 'firebase/database';
 import { doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { rtdb, db } from '../../shared/lib/firebase';
+import { API_BASE_URL } from './apiConfig';
 
 // Trigger a full emergency alert and update doctor's active alerts map
 export const triggerEmergency = async (
@@ -257,7 +258,7 @@ export const sendRealtimeWhatsAppEmergency = async (vitals: any, location: any) 
   // 3. Make POST request to Node.js backend API
   try {
     console.log(`[Frontend Service] Sending alert request to backend API...`);
-    const response = await fetch('http://localhost:5000/api/emergency/send-alert', {
+    const response = await fetch(`${API_BASE_URL}/api/emergency/send-alert`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -289,7 +290,7 @@ export const sendRealtimeWhatsAppEmergency = async (vitals: any, location: any) 
 export const callAmbulanceAPI = async () => {
   try {
     console.log('[Frontend Service] Sending call ambulance request to backend...');
-    const response = await fetch('http://localhost:5000/api/emergency/call-ambulance', {
+    const response = await fetch(`${API_BASE_URL}/api/emergency/call-ambulance`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

@@ -1,5 +1,6 @@
 import { ref, push, set, query, orderByChild, endAt, get, remove } from 'firebase/database';
 import { rtdb } from '../../shared/lib/firebase';
+import { API_BASE_URL } from './apiConfig';
 
 export const historyService = {
   /**
@@ -58,7 +59,7 @@ export const historyService = {
    */
   async getHistory(serialNumber: string) {
     try {
-      const response = await fetch(`http://localhost:5000/api/telemetry/history?patientId=${serialNumber}`);
+      const response = await fetch(`${API_BASE_URL}/api/telemetry/history?patientId=${serialNumber}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

@@ -1,4 +1,5 @@
 import { rtdb } from '../../shared/lib/firebase';
+import { API_BASE_URL } from './apiConfig';
 import { ref, get, set, update } from "firebase/database";
 
 export interface UserProfileData {
@@ -175,7 +176,7 @@ export async function updateEmergencyContacts(
  */
 export async function fetchLast10Readings(uid: string): Promise<ReadingsHistoryEntry[]> {
   try {
-    const response = await fetch(`http://localhost:5000/api/telemetry/history?patientId=${uid}`);
+    const response = await fetch(`${API_BASE_URL}/api/telemetry/history?patientId=${uid}`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
