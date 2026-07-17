@@ -1,24 +1,28 @@
-const { initializeApp } = require('firebase/app');
+const { initializeApp, getApps, getApp } = require('firebase/app');
 const { getDatabase, ref: rtdbRef, set: rtdbSet } = require('firebase/database');
 const { getFirestore, collection, doc, setDoc } = require('firebase/firestore');
 const dotenv = require('dotenv');
 
 dotenv.config();
 
+// Public Firebase client config — these are safe to hardcode (they are public keys).
+// VITE_FIREBASE_* env vars only exist in Vite builds, NOT on Render/Node.js servers.
 const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY,
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: process.env.VITE_FIREBASE_DATABASE_URL,
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.VITE_FIREBASE_APP_ID,
-  measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyAccH7rClosmQwrreeseAmHpk3RhJN3M2I",
+  authDomain: "heartsync-3b608.firebaseapp.com",
+  databaseURL: "https://heartsync-3b608-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "heartsync-3b608",
+  storageBucket: "heartsync-3b608.firebasestorage.app",
+  messagingSenderId: "3825789912",
+  appId: "1:3825789912:web:377c919c80a662ef0e20ad",
+  measurementId: "G-J7RB74GVJS"
 };
 
-const app = initializeApp(firebaseConfig);
+// Singleton guard — prevents "already exists" crash on Render hot-restarts
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const rtdb = getDatabase(app);
+
 
 /**
  * Store emergency log in Firestore
