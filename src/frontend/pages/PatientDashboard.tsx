@@ -31,6 +31,10 @@ import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 
 import VitalsCard from '../components/patient/VitalsCard';
 import ECGGraph from '../components/patient/ECGGraph';
+import type { ECGSource } from '../components/patient/ECGGraph';
+// Real clinical ECG fallback data from PhysioNet MIT-BIH Arrhythmia Database (Record 100)
+import physionetData from '../../frontend/assets/physionet_mitbih.json';
+const PHYSIONET_SAMPLES: number[] = (physionetData as any).samples as number[];
 import AIChatWidget from '../components/patient/AIChatWidget';
 import LiveLocation from './LiveLocation';
 import AIAssessment from './AIAssessment';
@@ -100,6 +104,14 @@ const PatientDashboard = () => {
 
   const [vitals, setVitals] = useState<any>(null);
 
+  // ─── ECG Source Mode ────────────────────────────────────────────────────────
+  // ECG_MODE controls fallback behaviour:
+  //   'AUTO'      — Show live ECG if valid, else PhysioNet reference. (Default)
+  //   'LIVE_ONLY' — Only show live sensor data. Show NO_SIGNAL if unavailable.
+  //   'DEMO_ONLY' — Always show PhysioNet reference ECG.
+  const ECG_MODE: 'AUTO' | 'LIVE_ONLY' | 'DEMO_ONLY' = 'AUTO';
+  const [ecgSource, setEcgSource] = useState<ECGSource>('NO_SIGNAL');
+
 
   useEffect(() => {
     const unsubGlobal = onSnapshot(doc(db, 'emergencyStatus', 'global'), (snap) => {
@@ -126,6 +138,52 @@ const PatientDashboard = () => {
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
+
+  // ─── ECG Source Validation ────────────────────────────────────────────────
+  // Validates live ECG data quality and resolves the correct ecgSource mode.
+  // Rules:
+  //   1. sensorStatus must NOT be NO_FINGER, ERROR, DISCONNECTED, or OFFLINE.
+  //   2. ecgStream must have > 10 samples.
+  //   3. Signal must not be flat (max - min < 50 ADC units).
+  useEffect(() => {
+    if (ECG_MODE === 'DEMO_ONLY') {
+      setEcgSource('PHYSIONET_DEMO');
+      return;
+    }
+
+    if (!isConnected) {
+      if (ECG_MODE === 'LIVE_ONLY') {
+        setEcgSource('NO_SIGNAL');
+      } else {
+        // AUTO: fallback to PhysioNet when device disconnects
+        setEcgSource('PHYSIONET_DEMO');
+      }
+      return;
+    }
+
+    // Device is connected — validate live ECG quality
+    const ecgArr: number[] = vitals?.ecgData || [];
+    const sensorStatusRaw = String(vitals?.sensorStatus || '').toUpperCase();
+    const invalidStatuses = ['NO_FINGER', 'NOFINGER', 'ERROR', 'ECG_ERROR', 'DISCONNECTED', 'OFFLINE', 'LEADS_OFF'];
+    const isBadStatus = invalidStatuses.includes(sensorStatusRaw);
+
+    const hasEnoughSamples = ecgArr.length > 10;
+    const maxVal = ecgArr.length > 0 ? Math.max(...ecgArr) : 0;
+    const minVal = ecgArr.length > 0 ? Math.min(...ecgArr) : 0;
+    const isFlat = (maxVal - minVal) < 50;
+    const hasNonZero = ecgArr.some(v => v !== 0 && v !== 2000);
+
+    const isLiveEcgValid = !isBadStatus && hasEnoughSamples && !isFlat && hasNonZero;
+
+    if (isLiveEcgValid) {
+      setEcgSource('LIVE_SENSOR');
+    } else if (ECG_MODE === 'LIVE_ONLY') {
+      setEcgSource('NO_SIGNAL');
+    } else {
+      // AUTO: use PhysioNet fallback
+      setEcgSource('PHYSIONET_DEMO');
+    }
+  }, [isConnected, vitals?.ecgData, vitals?.sensorStatus, ECG_MODE]);
 
   useEffect(() => {
     if (vitals && (vitals.emergency || vitals.isAbnormal)) {
@@ -1227,11 +1285,12 @@ const PatientDashboard = () => {
                     
                     <div className="h-48 md:h-64">
                       <ECGGraph
-                        ecgData={vitals?.ecgData || []}
+                        ecgData={ecgSource === 'LIVE_SENSOR' ? (vitals?.ecgData || []) : PHYSIONET_SAMPLES}
                         bpm={vitals?.bpm ?? 0}
                         isSensorConnected={isConnected}
                         isEmergency={vitals?.emergency || vitals?.isAbnormal}
                         isCritical={vitals?.emergency}
+                        ecgSource={ecgSource}
                       />
                     </div>
                   </div>
@@ -1509,11 +1568,12 @@ const PatientDashboard = () => {
                   </div>
                   <div className="flex-1 relative">
                     <ECGGraph
-                      ecgData={vitals?.ecgData || []}
+                      ecgData={ecgSource === 'LIVE_SENSOR' ? (vitals?.ecgData || []) : PHYSIONET_SAMPLES}
                       bpm={vitals?.bpm ?? 0}
                       isSensorConnected={isConnected}
                       isEmergency={true}
                       isCritical={true}
+                      ecgSource={ecgSource}
                     />
                   </div>
                 </div>

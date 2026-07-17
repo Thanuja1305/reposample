@@ -1,11 +1,14 @@
 import React, { useRef, useEffect, useState } from 'react';
 
+export type ECGSource = 'LIVE_SENSOR' | 'PHYSIONET_DEMO' | 'NO_SIGNAL';
+
 interface ECGGraphProps {
   bpm: number;
   isEmergency?: boolean;
   ecgData?: number[];
   isSensorConnected?: boolean;
   isCritical?: boolean;
+  ecgSource?: ECGSource;
 }
 
 // Predefined medically inspired ECG Template Generator (P-Q-R-S-T wave model using Gaussian components)
@@ -200,7 +203,7 @@ const detectECGWaves = (points: number[]) => {
   return { rPeaks, qPeaks, sPeaks, pPeaks, tPeaks };
 };
 
-const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, isSensorConnected = true, isCritical = false }) => {
+const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, isSensorConnected = true, isCritical = false, ecgSource = 'NO_SIGNAL' }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointsRef = useRef<number[]>([]);
   
@@ -208,46 +211,22 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
   const prevEcgDataRef = useRef<number[]>([]);
   const scalingHistoryRef = useRef<number[]>([]);
 
-  // Local demo template state that cycles for variety in fallback mode
-  const [demoTemplate, setDemoTemplate] = useState<'NSR' | 'Bradycardia' | 'Tachycardia' | 'AFib' | 'VTach' | 'PVC'>('NSR');
-
-  // Cycle demo templates every 8 seconds when fallback mode is active
+  // Feed PhysioNet fallback ECG samples into the queue when in PHYSIONET_DEMO mode
+  const physionetOffsetRef = useRef<number>(0);
   useEffect(() => {
-    const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
-    if (!isSensorConnected || !hasReal) {
-      const list = ['NSR', 'Bradycardia', 'Tachycardia', 'AFib', 'VTach', 'PVC'] as const;
-      const interval = setInterval(() => {
-        setDemoTemplate(prev => {
-          const idx = list.indexOf(prev);
-          const nextIdx = (idx + 1) % list.length;
-          return list[nextIdx];
-        });
-      }, 8000);
-      return () => clearInterval(interval);
-    }
-  }, [isSensorConnected, ecgData]);
-
-  // Feed fallback medically inspired ECG templates to the queue
-  useEffect(() => {
-    const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
-    if (isSensorConnected && !hasReal) {
-      const demoBpm = demoTemplate === 'Bradycardia' ? 48 : (demoTemplate === 'Tachycardia' ? 120 : (demoTemplate === 'VTach' ? 165 : (demoTemplate === 'AFib' ? 95 : 72)));
-      const interval = setInterval(() => {
-        if (dataQueueRef.current.length < 150) {
-          if (demoTemplate === 'PVC') {
-            // PVC pattern mixes normal sinus beats with premature ventricular contractions
-            const isPvc = Math.random() < 0.35;
-            const beat = generateHeartbeatTemplate(isPvc ? 'PVC' : 'NSR', isPvc ? 85 : 72, 250);
-            dataQueueRef.current.push(...beat);
-          } else {
-            const beat = generateHeartbeatTemplate(demoTemplate, demoBpm, 250);
-            dataQueueRef.current.push(...beat);
-          }
+    if (ecgSource !== 'PHYSIONET_DEMO' || !Array.isArray(ecgData) || ecgData.length === 0) return;
+    const interval = setInterval(() => {
+      if (dataQueueRef.current.length < 200) {
+        // Stream 4 samples per tick at ~25ms = ~160 samples/sec (smooth scrolling)
+        for (let i = 0; i < 4; i++) {
+          const idx = physionetOffsetRef.current % ecgData.length;
+          dataQueueRef.current.push(ecgData[idx]);
+          physionetOffsetRef.current++;
         }
-      }, 150);
-      return () => clearInterval(interval);
-    }
-  }, [isSensorConnected, ecgData, demoTemplate]);
+      }
+    }, 25);
+    return () => clearInterval(interval);
+  }, [ecgSource, ecgData]);
 
   // Queue up raw live ECG samples when device is connected and data flows
   useEffect(() => {
@@ -307,10 +286,10 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
     }
     resizeCanvas();
 
-    const hasRealData = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
-    // Graph is active if sensor is connected and we either have real sensor streams or fallback mode is running
-    const isGraphActive = isSensorConnected;
-    const isFallbackMode = isSensorConnected && !hasRealData;
+    const hasRealData = ecgSource === 'LIVE_SENSOR' && Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    // Graph is active if we have a valid source (live or demo)
+    const isGraphActive = ecgSource === 'LIVE_SENSOR' || ecgSource === 'PHYSIONET_DEMO';
+    const isFallbackMode = ecgSource === 'PHYSIONET_DEMO';
 
     const draw = () => {
       const W   = Math.ceil(canvas.width  / (window.devicePixelRatio || 1));
@@ -434,31 +413,31 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
         });
       }
 
-      // Display Status Message Overlays
-      if (!isSensorConnected) {
+      // Display Status Message Overlays based on ecgSource
+      if (ecgSource === 'NO_SIGNAL') {
         ctx.fillStyle = 'rgba(254, 242, 242, 0.85)';
         ctx.fillRect(0, 0, W, H);
-        
         ctx.shadowBlur = 0;
         ctx.fillStyle  = '#dc2626';
         ctx.font       = 'bold 11px system-ui, sans-serif';
         ctx.textAlign  = 'center';
         ctx.fillText('DEVICE DISCONNECTED - NO ECG SIGNAL', W / 2, mid + 4);
-      } else if (isFallbackMode) {
-        ctx.fillStyle  = 'rgba(15, 23, 42, 0.75)';
-        ctx.fillRect(10, 10, 310, 20);
-
-        ctx.fillStyle  = '#f8fafc';
+      } else if (ecgSource === 'PHYSIONET_DEMO') {
+        // Small badge: Reference ECG Demo
+        ctx.fillStyle  = 'rgba(15, 23, 42, 0.78)';
+        ctx.fillRect(8, 8, 232, 22);
+        ctx.fillStyle  = '#fde68a';
         ctx.font       = 'bold 9px system-ui, sans-serif';
         ctx.textAlign  = 'left';
-        let label = 'NORMAL SINUS RHYTHM (72 BPM)';
-        if (demoTemplate === 'Bradycardia') label = 'SINUS BRADYCARDIA (48 BPM)';
-        else if (demoTemplate === 'Tachycardia') label = 'SINUS TACHYCARDIA (120 BPM)';
-        else if (demoTemplate === 'AFib') label = 'ATRIAL FIBRILLATION (95 BPM)';
-        else if (demoTemplate === 'VTach') label = 'VENTRICULAR TACHYCARDIA (165 BPM)';
-        else if (demoTemplate === 'PVC') label = 'PVC PATTERN (85 BPM)';
-
-        ctx.fillText(`DEMONSTRATION DATA - ${label} (FALLBACK MODE)`, 16, 23);
+        ctx.fillText('REFERENCE ECG DEMO  |  MIT-BIH Record 100 (MLII)', 14, 22);
+      } else if (ecgSource === 'LIVE_SENSOR') {
+        // Small badge: Live ECG
+        ctx.fillStyle  = 'rgba(5, 150, 105, 0.85)';
+        ctx.fillRect(8, 8, 100, 22);
+        ctx.fillStyle  = '#ffffff';
+        ctx.font       = 'bold 9px system-ui, sans-serif';
+        ctx.textAlign  = 'left';
+        ctx.fillText('LIVE ECG  |  AD8232', 14, 22);
       }
 
       animationId = requestAnimationFrame(draw);
@@ -470,7 +449,7 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
       cancelAnimationFrame(animationId);
       resizeObserver.disconnect();
     };
-  }, [bpm, isEmergency, ecgData, isSensorConnected, isCritical, demoTemplate]);
+  }, [bpm, isEmergency, ecgData, isSensorConnected, isCritical, ecgSource]);
 
   return (
     <div className="w-full h-full bg-[#fdf8f8] rounded-[24px] overflow-hidden relative border border-slate-100 shadow-inner">
