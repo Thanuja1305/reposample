@@ -383,6 +383,7 @@ const PatientDashboard = () => {
       `patients/${PATIENT_ID}/liveVitals`,                     // Backend Path D (logged-in UID)
       `users/HS-001/liveReading`,                              // Backend Path C (Arduino patientUid="HS-001")
       `users/${user.uid}/liveReading`,                         // Backend Path C (logged-in UID)
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,        // Explicit Arduino Test ID
       `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
       `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading`,
       // ── Device-level liveReading (Backend Path A — devices/{deviceId}) ───────
@@ -414,6 +415,9 @@ const PatientDashboard = () => {
       `users/${user.uid}/liveReading/ecgValues`,
       `users/${user.uid}/liveReading/ecg`,
       `users/${user.uid}/liveReading/ecgData`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgValues`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgData`,
       `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecgValues`,
       `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecg`,
       `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading/ecgValues`,
