@@ -373,26 +373,34 @@ const PatientDashboard = () => {
     let latestEcgData: number[] = [];
 
     const vitalsPaths = [
-      `Patients/${PATIENT_ID}/liveReading`,
+      // ── Primary paths written by the backend telemetry service ──────────────
+      `Patients/HS-001/liveReading`,                           // Backend Path E (Arduino patientUid="HS-001")
+      `Patients/${PATIENT_ID}/liveReading`,                    // Backend Path E (logged-in UID)
       `Patients/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
-      `liveReadings/${PATIENT_ID}`,
-      `liveReadings/HS-001`,
-      `patients/${PATIENT_ID}/liveVitals`,
-      `liveHealthMetrics/${PATIENT_ID}`,
-      `liveHealthMetrics/HS-001`,
-      `users/${user.uid}/liveReading`,
+      `liveReadings/HS-001`,                                   // Backend Path B (Arduino patientUid="HS-001")
+      `liveReadings/${PATIENT_ID}`,                            // Backend Path B (logged-in UID)
+      `patients/HS-001/liveVitals`,                            // Backend Path D (Arduino patientUid="HS-001")
+      `patients/${PATIENT_ID}/liveVitals`,                     // Backend Path D (logged-in UID)
+      `users/HS-001/liveReading`,                              // Backend Path C (Arduino patientUid="HS-001")
+      `users/${user.uid}/liveReading`,                         // Backend Path C (logged-in UID)
       `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
       `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading`,
-      `users/HS-001/liveReading`
+      // ── Device-level liveReading (Backend Path A — devices/{deviceId}) ───────
+      `devices/ESP32_ROOM_4A/liveReading`,
+      // ── Legacy / fallback paths ──────────────────────────────────────────────
+      `liveHealthMetrics/${PATIENT_ID}`,
+      `liveHealthMetrics/HS-001`,
     ];
 
     const ecgPaths = [
+      `Patients/HS-001/liveReading/ecgSegment`,
       `Patients/${PATIENT_ID}/liveReading/ecgSegment`,
       `Patients/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecgSegment`,
-      `liveReadings/${PATIENT_ID}/ecgSegment`,
-      `liveReadings/${PATIENT_ID}/latestEcgSegment`,
       `liveReadings/HS-001/ecgSegment`,
       `liveReadings/HS-001/latestEcgSegment`,
+      `liveReadings/${PATIENT_ID}/ecgSegment`,
+      `liveReadings/${PATIENT_ID}/latestEcgSegment`,
+      `patients/HS-001/liveVitals/ecgData`,
       `patients/${PATIENT_ID}/ecgValues`,
       `patients/${PATIENT_ID}/ecgData/waveform`,
       `liveHealthMetrics/${PATIENT_ID}/ecgValues`,
@@ -400,21 +408,25 @@ const PatientDashboard = () => {
       `liveHealthMetrics/HS-001/ecgValues`,
       `liveHealthMetrics/HS-001/ecgData`,
       `liveHealthMetrics/HS-001/ecg`,
+      `users/HS-001/liveReading/ecgData`,
+      `users/HS-001/liveReading/ecgValues`,
+      `users/HS-001/liveReading/ecg`,
       `users/${user.uid}/liveReading/ecgValues`,
       `users/${user.uid}/liveReading/ecg`,
+      `users/${user.uid}/liveReading/ecgData`,
       `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecgValues`,
       `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecg`,
       `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading/ecgValues`,
       `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading/ecg`,
-      `users/HS-001/liveReading/ecgValues`,
-      `users/HS-001/liveReading/ecg`
+      `devices/ESP32_ROOM_4A/liveReading/ecgSegment`,
     ];
 
     const iotDevicePaths = [
       `patients/${PATIENT_ID}/iotDevice`,
       `${PATIENT_ID}/iotDevice`,
       `users/${user.uid}/iotDevice`,
-      `users/HS-001/iotDevice`
+      `users/HS-001/iotDevice`,
+      `devices/ESP32_ROOM_4A`,
     ];
 
     const unsubs: (() => void)[] = [];
@@ -478,10 +490,19 @@ const PatientDashboard = () => {
       // Check inline sensorStatus / connected status in activeData
       let sensorConnectedFromData = true;
       if (activeData) {
-        const sensStat = activeData.sensorStatus ?? activeData.sensor ?? activeData.connected ?? activeData.sensor_status;
+        const sensStat = activeData.sensorStatus ?? activeData.sensor ?? activeData.connected ?? activeData.sensor_status ?? activeData.deviceStatus;
         if (sensStat !== undefined && sensStat !== null) {
           const sensStatStr = String(sensStat).toUpperCase();
-          if (sensStat === false || sensStat === 'false' || sensStatStr === 'DISCONNECTED' || sensStatStr === 'OFFLINE' || sensStatStr === 'DEVICE OFFLINE' || sensStatStr === 'ECG_NOT_CONNECTED') {
+          // Only treat as fully disconnected if the DEVICE is offline/disconnected.
+          // ECG_ERROR / NO_FINGER mean the device IS connected but the finger/leads are off —
+          // temperature & humidity readings are still valid in these states.
+          if (
+            sensStat === false || sensStat === 'false' ||
+            sensStatStr === 'DISCONNECTED' ||
+            sensStatStr === 'OFFLINE' ||
+            sensStatStr === 'DEVICE OFFLINE' ||
+            sensStatStr === 'ECG_NOT_CONNECTED'
+          ) {
             sensorConnectedFromData = false;
           }
         }
@@ -499,7 +520,9 @@ const PatientDashboard = () => {
       
       // If everything is exactly 0 and no sensorStatus is active, it means it's dummy/disconnected
       const hasSensorStatus = !!liveData?.sensorStatus || !!liveData?.sensor_status || !!liveData?.sensor;
-      if (bpm === 0 && spo2 === 0 && temp === 0 && hum === 0 && !hasSensorStatus) {
+      // Device is connected if: we have a sensorStatus field OR any vital is non-zero OR there is a recent timestamp
+      const hasRecentData = liveData?.timestamp && (Date.now() - Number(liveData.timestamp) < 120000); // within 2 min
+      if (bpm === 0 && spo2 === 0 && temp === 0 && hum === 0 && !hasSensorStatus && !hasRecentData) {
         sensorConnectedFromData = false;
       }
 
@@ -511,27 +534,35 @@ const PatientDashboard = () => {
         const sensorStatusStr = String(liveData?.sensorStatus || liveData?.sensor_status || '').toUpperCase();
         const isFingerOff = sensorStatusStr === 'NO_FINGER' || sensorStatusStr === 'NOFINGER';
         const isSearching = sensorStatusStr === 'SEARCHING' || sensorStatusStr === 'ACQUIRING';
-        const isError = sensorStatusStr === 'ERROR' || sensorStatusStr === 'ECG_ERROR';
+        // ECG_ERROR means only the ECG leads are off — temperature / SpO2 / humidity are still valid.
+        // isEcgLeadsOff is used purely to suppress ECG-derived BPM & ECG waveform display.
+        const isEcgLeadsOff = sensorStatusStr === 'ECG_ERROR' || sensorStatusStr === 'LEADS_OFF' || sensorStatusStr === 'LEADSOFF';
+        // isError covers genuine total-sensor failures (e.g. I2C bus error)
+        const isError = sensorStatusStr === 'ERROR';
 
         // ─── Real Medical Thresholds & Classification ─────────────────────────────────
-        const isBpmCritical = !isFingerOff && !isSearching && !isError && (bpm < 50 || bpm > 140);
-        const isBpmWarning  = !isFingerOff && !isSearching && !isError && (bpm >= 101 && bpm <= 140); // Elevated heart rate (101-140)
+        // BPM from ECG is invalid when leads are off — treat same as finger-off for BPM
+        const isBpmInvalid = isFingerOff || isSearching || isError || isEcgLeadsOff;
+        const isBpmCritical = !isBpmInvalid && (bpm < 50 || bpm > 140);
+        const isBpmWarning  = !isBpmInvalid && (bpm >= 101 && bpm <= 140); // Elevated heart rate (101-140)
         const isBpmNormal   = bpm >= 60 && bpm <= 100;
 
-        const isSpo2Critical = !isFingerOff && !isSearching && !isError && (spo2 > 0 && spo2 < 90);
-        const isSpo2Warning  = !isFingerOff && !isSearching && !isError && (spo2 >= 90 && spo2 <= 94); // Warning (90-94)
+        // SpO2 / Temp / Humidity are still valid when ECG leads are off
+        const isVitalsInvalid = isFingerOff || isSearching || isError;
+        const isSpo2Critical = !isVitalsInvalid && (spo2 > 0 && spo2 < 90);
+        const isSpo2Warning  = !isVitalsInvalid && (spo2 >= 90 && spo2 <= 94); // Warning (90-94)
         const isSpo2Normal   = spo2 >= 95;
 
-        const isTempCritical = !isFingerOff && !isSearching && !isError && (temp > 0 && (temp < 35 || temp > 40)); // Dangerous (<35 or >40)
-        const isTempWarning  = !isFingerOff && !isSearching && !isError && (temp >= 37.3 && temp <= 40); // Fever (37.3-40)
+        const isTempCritical = !isVitalsInvalid && (temp > 0 && (temp < 35 || temp > 40)); // Dangerous (<35 or >40)
+        const isTempWarning  = !isVitalsInvalid && (temp >= 37.3 && temp <= 40); // Fever (37.3-40)
         const isTempNormal   = temp >= 36.1 && temp <= 37.2;
 
-        const isHumCritical = !isFingerOff && !isSearching && !isError && (hum > 0 && (hum < 20 || hum > 75));
-        const isHumWarning  = !isFingerOff && !isSearching && !isError && (hum > 0 && !isHumCritical && (hum < 30 || hum > 60));
+        const isHumCritical = !isVitalsInvalid && (hum > 0 && (hum < 20 || hum > 75));
+        const isHumWarning  = !isVitalsInvalid && (hum > 0 && !isHumCritical && (hum < 30 || hum > 60));
 
         // ─── ECG Classification ──────────────────────────────────────
-        const isEcgConnected = !isFingerOff && !isSearching && !isError && liveData?.ecgStatus === 'CONNECTED' && liveData?.ecgQuality === 'GOOD';
-        const ecgStatus = (isFingerOff || isSearching || isError) ? 'Normal' : classifyECG(bpm, latestEcgData, isBpmCritical || isSpo2Critical || isTempCritical, isBpmWarning || isSpo2Warning || isTempWarning);
+        const isEcgConnected = !isFingerOff && !isSearching && !isError && !isEcgLeadsOff && liveData?.ecgStatus === 'CONNECTED' && liveData?.ecgQuality === 'GOOD';
+        const ecgStatus = (isFingerOff || isSearching || isError || isEcgLeadsOff) ? 'Normal' : classifyECG(bpm, latestEcgData, isBpmCritical || isSpo2Critical || isTempCritical, isBpmWarning || isSpo2Warning || isTempWarning);
         const isEcgCritical = ecgStatus === 'Flatline' || ecgStatus === 'Critical abnormality';
         const isEcgAbnormal = ecgStatus === 'Irregular rhythm';
 
@@ -777,7 +808,8 @@ const PatientDashboard = () => {
           isFallbackData: false,
           isFingerOff,
           isSearching,
-          isError
+          isError,
+          isEcgLeadsOff
         });
 
         setLoading(false);
@@ -1196,20 +1228,23 @@ const PatientDashboard = () => {
                 <>
                   {/* VITALS */}
                   <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6 mb-10">
+                    {/* ── HEART RATE: hidden when ECG leads are off (BPM comes from ECG) ── */}
                     <VitalsCard
                       label="HEART RATE"
-                      value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.bpm > 0) ? vitals.bpm : '--'}
+                      value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && !vitals?.isEcgLeadsOff && vitals?.bpm > 0) ? vitals.bpm : '--'}
                       unit="BPM"
                       icon={Heart}
-                      isEmergency={vitals?.isBpmCritical && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
-                      status={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.isBpmCritical ? 'critical' : (vitals?.bpm < 60 || vitals?.bpm > 100) ? 'warning' : 'optimal'}
+                      isEmergency={vitals?.isBpmCritical && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && !vitals?.isEcgLeadsOff}
+                      status={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError || vitals?.isEcgLeadsOff) ? 'optimal' : vitals?.isBpmCritical ? 'critical' : (vitals?.bpm < 60 || vitals?.bpm > 100) ? 'warning' : 'optimal'}
                       customStatusLabel={
                         !isConnected ? 'NO SENSOR DETECTED' :
                         vitals?.isFingerOff ? 'NO FINGER DETECTED' :
                         vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isEcgLeadsOff ? 'ECG LEADS OFF' :
                         vitals?.isError ? 'SENSOR ERROR' : undefined
                       }
                     />
+                    {/* ── BLOOD OXYGEN: still valid when ECG leads off (MAX30102 is separate) ── */}
                     <VitalsCard
                       label="BLOOD OXYGEN"
                       value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.spo2 > 0) ? vitals.spo2 : '--'}
@@ -1224,6 +1259,7 @@ const PatientDashboard = () => {
                         vitals?.isError ? 'SENSOR ERROR' : undefined
                       }
                     />
+                    {/* ── TEMPERATURE: still valid when ECG leads off (DHT22 is separate) ── */}
                     <VitalsCard
                       label="TEMPERATURE"
                       value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.temperature > 0) ? Number(vitals.temperature).toFixed(1) : '--'}
@@ -1238,6 +1274,7 @@ const PatientDashboard = () => {
                         vitals?.isError ? 'SENSOR ERROR' : undefined
                       }
                     />
+                    {/* ── HUMIDITY: still valid when ECG leads off (DHT22 is separate) ── */}
                     <VitalsCard
                       label="HUMIDITY"
                       value={(isConnected && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && vitals?.humidity > 0) ? vitals.humidity : '--'}
@@ -1254,19 +1291,20 @@ const PatientDashboard = () => {
                     />
                     <VitalsCard
                       label="EMERGENCY STATUS"
-                      value={!isConnected ? 'OFFLINE' : (vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'STANDBY' : vitals?.emergency ? 'HIGH RISK' : (vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL')}
+                      value={!isConnected ? 'OFFLINE' : (vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'STANDBY' : vitals?.isEcgLeadsOff ? 'STANDBY' : vitals?.emergency ? 'HIGH RISK' : (vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL')}
                       unit=""
-                      icon={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? ShieldCheck : vitals?.emergency ? ShieldAlert : ShieldCheck}
-                      status={!isConnected ? 'optimal' : (vitals?.isFingerOff || vitals?.isSearching || vitals?.isError) ? 'optimal' : vitals?.emergency ? 'critical' : (vitals?.isAbnormal ? 'warning' : 'optimal')}
+                      icon={(!isConnected || vitals?.isFingerOff || vitals?.isSearching || vitals?.isError || vitals?.isEcgLeadsOff) ? ShieldCheck : vitals?.emergency ? ShieldAlert : ShieldCheck}
+                      status={!isConnected ? 'optimal' : (vitals?.isFingerOff || vitals?.isSearching || vitals?.isError || vitals?.isEcgLeadsOff) ? 'optimal' : vitals?.emergency ? 'critical' : (vitals?.isAbnormal ? 'warning' : 'optimal')}
                       customStatusLabel={
                         !isConnected ? 'DEVICE OFFLINE' :
                         vitals?.isFingerOff ? 'NO FINGER DETECTED' :
                         vitals?.isSearching ? 'ACQUIRING SIGNAL...' :
+                        vitals?.isEcgLeadsOff ? 'ECG LEADS OFF' :
                         vitals?.isError ? 'SENSOR ERROR' :
                         vitals?.emergency ? 'HIGH RISK' :
                         vitals?.isAbnormal ? 'MEDIUM RISK' : 'NORMAL'
                       }
-                      isEmergency={vitals?.emergency && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError}
+                      isEmergency={vitals?.emergency && !vitals?.isFingerOff && !vitals?.isSearching && !vitals?.isError && !vitals?.isEcgLeadsOff}
                     />
                   </div>
 
