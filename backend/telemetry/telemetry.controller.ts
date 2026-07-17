@@ -25,23 +25,24 @@ export async function streamTelemetry(req: Request, res: Response): Promise<Resp
     const o2 = Number(spo2);
     const temp = Number(temperature);
     const hum = Number(humidity);
+    const isOfflineState = sensorStatus === 'NO_FINGER' || sensorStatus === 'ERROR' || sensorStatus === 'SEARCHING' || sensorStatus === 'ECG_ERROR';
 
-    // Heart Rate: 20 BPM - 220 BPM
-    if (isNaN(hr) || hr < 20 || hr > 220) {
+    // Heart Rate: 20 BPM - 220 BPM (Allow 0 for offline/no-finger state)
+    if (isNaN(hr) || (hr !== 0 && (hr < 20 || hr > 220)) || (hr === 0 && !isOfflineState)) {
       console.error(`[Telemetry] Validation failed: heartRate ${heartRate} is invalid`);
-      return res.status(400).json({ error: 'Invalid heartRate. Must be between 20 and 220 BPM.' });
+      return res.status(400).json({ error: 'Invalid heartRate. Must be between 20 and 220 BPM or 0 for offline.' });
     }
 
-    // SpO2: 70% - 100%
-    if (isNaN(o2) || o2 < 70 || o2 > 100) {
+    // SpO2: 70% - 100% (Allow 0 for offline/no-finger state)
+    if (isNaN(o2) || (o2 !== 0 && (o2 < 70 || o2 > 100)) || (o2 === 0 && !isOfflineState)) {
       console.error(`[Telemetry] Validation failed: spo2 ${spo2} is invalid`);
-      return res.status(400).json({ error: 'Invalid spo2. Must be between 70% and 100%.' });
+      return res.status(400).json({ error: 'Invalid spo2. Must be between 70% and 100% or 0 for offline.' });
     }
 
-    // Temperature: 30°C - 45°C
-    if (isNaN(temp) || temp < 30 || temp > 45) {
+    // Temperature: 30°C - 45°C (Allow 0 for offline/no-finger state)
+    if (isNaN(temp) || (temp !== 0 && (temp < 30 || temp > 45)) || (temp === 0 && !isOfflineState)) {
       console.error(`[Telemetry] Validation failed: temperature ${temperature} is invalid`);
-      return res.status(400).json({ error: 'Invalid temperature. Must be between 30°C and 45°C.' });
+      return res.status(400).json({ error: 'Invalid temperature. Must be between 30°C and 45°C or 0 for offline.' });
     }
 
     // Humidity: 0% - 100%
