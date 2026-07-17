@@ -82,6 +82,7 @@ const PatientDashboard = () => {
   const [isConnected, setConnected] = useState(false);
   const [firebaseConnected, setFirebaseConnected] = useState(true);
   const [showEmergencyPopup, setShowEmergencyPopup] = useState(false);
+  const [countdown, setCountdown] = useState(10);
   const emergencyAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [historyData, setHistoryData] = useState<any[]>([]);
@@ -133,6 +134,26 @@ const PatientDashboard = () => {
       setShowEmergencyPopup(false);
     }
   }, [vitals?.emergency, vitals?.isAbnormal]);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (showEmergencyPopup) {
+      setCountdown(10);
+      timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            handlePatientNeedsHelp();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [showEmergencyPopup]);
 
   const handlePatientFalseAlert = async () => {
     setShowEmergencyPopup(false);
@@ -1357,7 +1378,7 @@ const PatientDashboard = () => {
                     <ShieldAlert className="w-8 h-8 text-white animate-pulse" />
                   </div>
                   <div>
-                    <h2 className="text-white font-bold text-2xl tracking-tight mb-1">CRITICAL CONDITION DETECTED</h2>
+                    <h2 className="text-white font-bold text-2xl tracking-tight mb-1">CRITICAL CONDITION DETECTED ({countdown}s)</h2>
                     <p className="text-white/80 text-sm font-medium">{new Date().toLocaleString()}</p>
                   </div>
                 </div>

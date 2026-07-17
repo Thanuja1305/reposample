@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface ECGGraphProps {
   bpm: number;
@@ -8,7 +8,38 @@ interface ECGGraphProps {
   isCritical?: boolean;
 }
 
-// Helper to extract only the new points from a sliding window or batch of ECG values
+// Predefined medically inspired ECG Template Generator (P-Q-R-S-T wave model using Gaussian components)
+const generateHeartbeatTemplate = (bpm: number, Fs: number = 250): number[] => {
+  const rrIntervalMs = 60000 / bpm;
+  const samplesPerBeat = Math.floor((rrIntervalMs / 1000) * Fs);
+  const beat = new Array(samplesPerBeat).fill(2000);
+
+  // Normalized timing offsets relative to beat duration
+  const t_p = Math.floor(samplesPerBeat * 0.15);
+  const t_q = Math.floor(samplesPerBeat * 0.35);
+  const t_r = Math.floor(samplesPerBeat * 0.40);
+  const t_s = Math.floor(samplesPerBeat * 0.43);
+  const t_t = Math.floor(samplesPerBeat * 0.65);
+
+  const w_p = Math.max(2, Math.floor(samplesPerBeat * 0.05));
+  const w_q = Math.max(1, Math.floor(samplesPerBeat * 0.015));
+  const w_r = Math.max(1, Math.floor(samplesPerBeat * 0.01));
+  const w_s = Math.max(1, Math.floor(samplesPerBeat * 0.015));
+  const w_t = Math.max(4, Math.floor(samplesPerBeat * 0.08));
+
+  for (let i = 0; i < samplesPerBeat; i++) {
+    const val_p = 100 * Math.exp(-Math.pow((i - t_p) / w_p, 2));
+    const val_q = -150 * Math.exp(-Math.pow((i - t_q) / w_q, 2));
+    const val_r = 800 * Math.exp(-Math.pow((i - t_r) / w_r, 2));
+    const val_s = -250 * Math.exp(-Math.pow((i - t_s) / w_s, 2));
+    const val_t = 200 * Math.exp(-Math.pow((i - t_t) / w_t, 2));
+
+    beat[i] = 2000 + val_p + val_q + val_r + val_s + val_t;
+  }
+  return beat;
+};
+
+// Helper to extract only new incoming points from a sliding window
 const getNewPoints = (prev: number[], next: number[]): number[] => {
   if (!prev || prev.length === 0) return next;
   if (!next || next.length === 0) return [];
@@ -29,34 +60,142 @@ const getNewPoints = (prev: number[], next: number[]): number[] => {
   return next;
 };
 
-/**
- * ECGGraph — renders a real-time scrolling ECG trace on a clinical pink medical grid.
- */
+// P-Q-R-S-T Peak & Wave Detection logic on the scrolling canvas display buffer
+const detectECGWaves = (points: number[]) => {
+  const rPeaks: number[] = [];
+  const qPeaks: number[] = [];
+  const sPeaks: number[] = [];
+  const pPeaks: number[] = [];
+  const tPeaks: number[] = [];
+
+  const w = points.length;
+  // Locate R peaks: sharp local minima in y-coordinate (spikes pointing UP on screen)
+  for (let i = 15; i < w - 15; i++) {
+    const val = points[i];
+    if (val < points[i-1] && val < points[i+1] && val < points[i-2] && val < points[i+2]) {
+      // Must be a significant upward spike (Y coordinate is small)
+      if (val < 45) {
+        rPeaks.push(i);
+      }
+    }
+  }
+
+  rPeaks.forEach(rIdx => {
+    // Q wave is local minimum right before R peak (within 8 samples)
+    let qIdx = rIdx - 2;
+    let maxQY = points[qIdx];
+    for (let j = rIdx - 8; j < rIdx; j++) {
+      if (j >= 0 && points[j] > maxQY) {
+        maxQY = points[j];
+        qIdx = j;
+      }
+    }
+    if (qIdx !== rIdx) qPeaks.push(qIdx);
+
+    // S wave is local minimum right after R peak (within 8 samples)
+    let sIdx = rIdx + 2;
+    let maxSY = points[sIdx];
+    for (let j = rIdx + 1; j < rIdx + 8; j++) {
+      if (j < w && points[j] > maxSY) {
+        maxSY = points[j];
+        sIdx = j;
+      }
+    }
+    if (sIdx !== rIdx) sPeaks.push(sIdx);
+
+    // P wave is local maximum before Q wave (within 10-25 samples)
+    if (qIdx > 0) {
+      let pIdx = qIdx - 8;
+      if (pIdx >= 0) {
+        let minPY = points[pIdx];
+        for (let j = qIdx - 22; j < qIdx - 4; j++) {
+          if (j >= 0 && points[j] < minPY) {
+            minPY = points[j];
+            pIdx = j;
+          }
+        }
+        pPeaks.push(pIdx);
+      }
+    }
+
+    // T wave is local maximum after S wave (within 10-35 samples)
+    if (sIdx < w) {
+      let tIdx = sIdx + 12;
+      if (tIdx < w) {
+        let minTY = points[tIdx];
+        for (let j = sIdx + 8; j < sIdx + 32; j++) {
+          if (j < w && points[j] < minTY) {
+            minTY = points[j];
+            tIdx = j;
+          }
+        }
+        tPeaks.push(tIdx);
+      }
+    }
+  });
+
+  return { rPeaks, qPeaks, sPeaks, pPeaks, tPeaks };
+};
+
 const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, isSensorConnected = true, isCritical = false }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pointsRef = useRef<number[]>([]);
   
-  // Real-time queue and tracking refs
   const dataQueueRef = useRef<number[]>([]);
   const prevEcgDataRef = useRef<number[]>([]);
   const scalingHistoryRef = useRef<number[]>([]);
 
-  // Append new incoming ECG points to the queue whenever ecgData changes
+  // Local demo template state that cycles for variety in fallback mode
+  const [demoTemplate, setDemoTemplate] = useState<'NSR' | 'Bradycardia' | 'Tachycardia'>('NSR');
+
+  // Cycle demo templates every 8 seconds when fallback mode is active
   useEffect(() => {
-    const prevEcgData = prevEcgDataRef.current;
-    const currentEcgData = ecgData || [];
-    if (JSON.stringify(prevEcgData) !== JSON.stringify(currentEcgData)) {
-      const newPoints = getNewPoints(prevEcgData, currentEcgData);
-      if (newPoints.length > 0) {
-        dataQueueRef.current.push(...newPoints);
-        // Limit queue size to avoid cumulative latency
-        if (dataQueueRef.current.length > 1000) {
-          dataQueueRef.current = dataQueueRef.current.slice(-500);
-        }
-      }
-      prevEcgDataRef.current = currentEcgData;
+    const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    if (!isSensorConnected || !hasReal) {
+      const interval = setInterval(() => {
+        setDemoTemplate(prev => {
+          if (prev === 'NSR') return 'Bradycardia';
+          if (prev === 'Bradycardia') return 'Tachycardia';
+          return 'NSR';
+        });
+      }, 8000);
+      return () => clearInterval(interval);
     }
-  }, [ecgData]);
+  }, [isSensorConnected, ecgData]);
+
+  // Feed fallback medically inspired ECG templates to the queue
+  useEffect(() => {
+    const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    if (isSensorConnected && !hasReal) {
+      const demoBpm = demoTemplate === 'NSR' ? 72 : demoTemplate === 'Bradycardia' ? 48 : 120;
+      const interval = setInterval(() => {
+        if (dataQueueRef.current.length < 150) {
+          const beat = generateHeartbeatTemplate(demoBpm, 250);
+          dataQueueRef.current.push(...beat);
+        }
+      }, 150);
+      return () => clearInterval(interval);
+    }
+  }, [isSensorConnected, ecgData, demoTemplate]);
+
+  // Queue up raw live ECG samples when device is connected and data flows
+  useEffect(() => {
+    const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    if (isSensorConnected && hasReal) {
+      const prevEcgData = prevEcgDataRef.current;
+      const currentEcgData = ecgData || [];
+      if (JSON.stringify(prevEcgData) !== JSON.stringify(currentEcgData)) {
+        const newPoints = getNewPoints(prevEcgData, currentEcgData);
+        if (newPoints.length > 0) {
+          dataQueueRef.current.push(...newPoints);
+          if (dataQueueRef.current.length > 1000) {
+            dataQueueRef.current = dataQueueRef.current.slice(-500);
+          }
+        }
+        prevEcgDataRef.current = currentEcgData;
+      }
+    }
+  }, [ecgData, isSensorConnected]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -67,7 +206,6 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
     let animationId: number;
     let lastY: number | null = null;
 
-    /* ── Canvas sizing ─────────────────────────────────────────────── */
     const resizeCanvas = () => {
       const container = canvas.parentElement;
       if (!container) return;
@@ -98,63 +236,52 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
     }
     resizeCanvas();
 
-    /* ── Derived state booleans ────────────────────────────────────── */
-    const hasRealData = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0);
-    const isGraphActive = isSensorConnected && (hasRealData || isCritical) && bpm > 0;
+    const hasRealData = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    // Graph is active if sensor is connected and we either have real sensor streams or fallback mode is running
+    const isGraphActive = isSensorConnected;
+    const isFallbackMode = isSensorConnected && !hasRealData;
 
-    /* ── Main draw loop ────────────────────────────────────────────── */
     const draw = () => {
       const W   = Math.ceil(canvas.width  / (window.devicePixelRatio || 1));
       const H   = Math.ceil(canvas.height / (window.devicePixelRatio || 1));
       const mid = H / 2;
 
-      // Sync display points array length with canvas pixel width
       while (pointsRef.current.length < W) pointsRef.current.push(mid);
       while (pointsRef.current.length > W) pointsRef.current.shift();
 
-      // Clear screen
       ctx.clearRect(0, 0, W, H);
 
-      /* ── Clinical ECG Paper Grid (As Uploaded in Image) ──────────── */
+      // Pink clinical ECG graph paper background
       ctx.fillStyle = '#fdf8f8';
       ctx.fillRect(0, 0, W, H);
 
-      // Minor grid lines (10px spacing = 1mm)
+      // 1mm minor grids
       ctx.strokeStyle = 'rgba(239, 68, 68, 0.08)';
       ctx.lineWidth = 0.5;
       for (let x = 0; x < W; x += 10) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
       for (let y = 0; y < H; y += 10) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
       
-      // Major grid lines (50px spacing = 5mm)
+      // 5mm major grids
       ctx.strokeStyle = 'rgba(239, 68, 68, 0.22)';
       ctx.lineWidth = 1.0;
       for (let x = 0; x < W; x += 50) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
       for (let y = 0; y < H; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-      /* ── Waveform ingestion ──────────────────────────────────────── */
-      // Dynamically adjust speed based on queue length to avoid lag or starvation
+      // Speed control to absorb data packets smoothly without lag
       const qLen = dataQueueRef.current.length;
       let speed = 1;
-      if (qLen > 300) {
-        speed = 4;
-      } else if (qLen > 150) {
-        speed = 3;
-      } else if (qLen > 50) {
-        speed = 2;
-      } else if (qLen > 10) {
-        speed = 1;
-      } else if (qLen === 0) {
-        speed = 1;
-      }
+      if (qLen > 300) speed = 4;
+      else if (qLen > 150) speed = 3;
+      else if (qLen > 50) speed = 2;
 
       for (let s = 0; s < speed; s++) {
         let y = mid;
 
         if (!isGraphActive) {
+          // Flatline flat wave if device is disconnected
           y = mid;
         } else if (dataQueueRef.current.length > 0) {
           const raw = dataQueueRef.current.shift()!;
-          
           scalingHistoryRef.current.push(raw);
           if (scalingHistoryRef.current.length > 500) {
             scalingHistoryRef.current.shift();
@@ -171,31 +298,28 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
           const drawH  = H - margin * 2;
           const scaleFactor = range < 300 ? (range / 1500) : 1.0;
           
-          // Using negative subtraction to keep wave orientation normal (spikes point UP)
-          y = mid - (sampleDeDrifted / range) * drawH * 0.8 * scaleFactor;
+          y = mid - (sampleDeDrifted / range) * drawH * 0.82 * scaleFactor;
         } else {
           y = lastY !== null ? lastY : mid;
         }
 
-        // Low-pass filter (Exponential Moving Average)
+        // Filter out sudden noise jumps using Exponential Moving Average
         if (lastY === null) {
           lastY = y;
         } else {
-          y = lastY * 0.85 + y * 0.15;
+          y = lastY * 0.80 + y * 0.20;
           lastY = y;
         }
 
-        // Remove simulated biological base noise to strictly reflect live sensor data
-        // We only plot the true processed ADC reading
         pointsRef.current.push(y);
         pointsRef.current.shift();
       }
 
-      /* ── Draw the thin, sharp dark red ECG trace ─────────────────── */
+      // Draw dark red clinical ECG waveform trace
       ctx.save();
       ctx.beginPath();
-      ctx.strokeStyle = isGraphActive ? '#800000' : '#94a3b8'; // dark crimson maroon when active, slate when flat
-      ctx.lineWidth   = 1.5;
+      ctx.strokeStyle = isGraphActive ? '#800000' : '#64748b'; // Dark red when active, slate when flat
+      ctx.lineWidth   = 1.6;
       ctx.lineCap     = 'round';
       ctx.lineJoin    = 'round';
 
@@ -206,25 +330,58 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
       ctx.stroke();
       ctx.restore();
 
-      /* ── Display Status Message Overlay ───────────────────────────── */
+      // Realtime P-Q-R-S-T peaks rendering on active graph
+      if (isGraphActive && (hasRealData || isFallbackMode)) {
+        const { rPeaks, qPeaks, sPeaks, pPeaks, tPeaks } = detectECGWaves(pointsRef.current);
+        ctx.font = 'bold 8px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+
+        pPeaks.forEach(idx => {
+          ctx.fillStyle = '#2563eb'; // Blue P
+          ctx.beginPath(); ctx.arc(idx, pointsRef.current[idx], 2, 0, 2*Math.PI); ctx.fill();
+          ctx.fillText('P', idx, pointsRef.current[idx] - 6);
+        });
+        qPeaks.forEach(idx => {
+          ctx.fillStyle = '#ca8a04'; // Yellow Q
+          ctx.beginPath(); ctx.arc(idx, pointsRef.current[idx], 2, 0, 2*Math.PI); ctx.fill();
+          ctx.fillText('Q', idx, pointsRef.current[idx] + 9);
+        });
+        rPeaks.forEach(idx => {
+          ctx.fillStyle = '#dc2626'; // Red R
+          ctx.beginPath(); ctx.arc(idx, pointsRef.current[idx], 2.5, 0, 2*Math.PI); ctx.fill();
+          ctx.fillText('R', idx, pointsRef.current[idx] - 8);
+        });
+        sPeaks.forEach(idx => {
+          ctx.fillStyle = '#9333ea'; // Purple S
+          ctx.beginPath(); ctx.arc(idx, pointsRef.current[idx], 2, 0, 2*Math.PI); ctx.fill();
+          ctx.fillText('S', idx, pointsRef.current[idx] + 9);
+        });
+        tPeaks.forEach(idx => {
+          ctx.fillStyle = '#059669'; // Green T
+          ctx.beginPath(); ctx.arc(idx, pointsRef.current[idx], 2, 0, 2*Math.PI); ctx.fill();
+          ctx.fillText('T', idx, pointsRef.current[idx] - 6);
+        });
+      }
+
+      // Display Status Message Overlays
       if (!isSensorConnected) {
+        ctx.fillStyle = 'rgba(254, 242, 242, 0.85)';
+        ctx.fillRect(0, 0, W, H);
+        
         ctx.shadowBlur = 0;
-        ctx.fillStyle  = '#94a3b8';
+        ctx.fillStyle  = '#dc2626';
         ctx.font       = 'bold 11px system-ui, sans-serif';
         ctx.textAlign  = 'center';
-        ctx.fillText('Waiting for ECG signal.', W / 2, mid - 14);
-      } else if (!hasRealData && !isCritical) {
-        ctx.shadowBlur = 0;
-        ctx.fillStyle  = '#94a3b8';
-        ctx.font       = 'bold 11px system-ui, sans-serif';
-        ctx.textAlign  = 'center';
-        ctx.fillText('Waiting for ECG signal.', W / 2, mid - 14);
-      } else if (isCritical && !hasRealData) {
-        ctx.shadowBlur = 0;
-        ctx.fillStyle  = '#ef4444';
-        ctx.font       = 'bold 11px system-ui, sans-serif';
-        ctx.textAlign  = 'center';
-        ctx.fillText('CRITICAL: HEART FLATLINE ALERT', W / 2, mid - 14);
+        ctx.fillText('DEVICE DISCONNECTED - NO ECG SIGNAL', W / 2, mid + 4);
+      } else if (isFallbackMode) {
+        ctx.fillStyle  = 'rgba(15, 23, 42, 0.75)';
+        ctx.fillRect(10, 10, 310, 20);
+
+        ctx.fillStyle  = '#f8fafc';
+        ctx.font       = 'bold 9px system-ui, sans-serif';
+        ctx.textAlign  = 'left';
+        const label = demoTemplate === 'NSR' ? 'NORMAL SINUS RHYTHM (72 BPM)' : demoTemplate === 'Bradycardia' ? 'BRADYCARDIA (48 BPM)' : 'TACHYCARDIA (120 BPM)';
+        ctx.fillText(`DEMONSTRATION DATA - ${label} (FALLBACK MODE)`, 16, 23);
       }
 
       animationId = requestAnimationFrame(draw);
@@ -236,7 +393,7 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
       cancelAnimationFrame(animationId);
       resizeObserver.disconnect();
     };
-  }, [bpm, isEmergency, ecgData, isSensorConnected, isCritical]);
+  }, [bpm, isEmergency, ecgData, isSensorConnected, isCritical, demoTemplate]);
 
   return (
     <div className="w-full h-full bg-[#fdf8f8] rounded-[24px] overflow-hidden relative border border-slate-100 shadow-inner">

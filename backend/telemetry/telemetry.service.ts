@@ -1,5 +1,6 @@
 import { rtdbAdmin } from '../firebase/firebaseAdmin';
 import { db } from '../services/dataConnectService';
+import { generateReport } from '../services/aiService';
 
 export interface TelemetryPacket {
   patientUid: string;
@@ -123,10 +124,22 @@ class TelemetryService {
           deviceStatus: 'ONLINE',
           timestamp: Date.now(),
         });
+
       }
     } catch (firebaseError: any) {
       console.error('[Firebase] Error updating RTDB paths:', firebaseError.message);
     }
+
+    // Trigger AI Diagnosis Report generation asynchronously in background (always runs, including mock database fallback)
+    generateReport({
+      patientId: patientUid,
+      heartRate,
+      spo2,
+      temperature,
+      humidity,
+      sensorStatus,
+      ecgStatus: heartRate > 120 || spo2 < 90 ? 'Critical' : 'Normal'
+    }).catch(err => console.error('[Telemetry Service] AI generation failed:', err.message));
 
     // 2. Add to both buffers
     const enrichedPacket = { ...packet, createdAt: new Date() };

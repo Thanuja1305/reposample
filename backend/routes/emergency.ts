@@ -6,6 +6,9 @@ import dbService from '../services/db';
 import { rtdbAdmin } from '../firebase/firebaseAdmin';
 import twilio from 'twilio';
 
+// @ts-ignore
+const { reverseGeocode } = require('../utils/locationUtils');
+
 const router = Router();
 
 // Default emergency contacts to fallback on if PostgreSQL yields empty rows
@@ -123,25 +126,41 @@ router.post('/dispatch', async (req: Request, res: Response) => {
     // Query current live coordinates & vitals from RTDB
     try {
       if (rtdbAdmin) {
-        const liveSnapshot = await rtdbAdmin.ref(`liveReadings/${patientUid}`).once('value');
+        const liveSnapshot = await rtdbAdmin.ref(`Patients/${patientUid}/liveReading`).once('value');
         if (liveSnapshot.exists()) {
           const liveVal = liveSnapshot.val();
-          heartRate = liveVal.heartRate || heartRate;
+          heartRate = liveVal.heartRate || liveVal.bpm || heartRate;
           spo2 = liveVal.spo2 || spo2;
           temperature = liveVal.temperature || temperature;
-          
-          if (liveVal.location) {
-            latitude = liveVal.location.latitude || latitude;
-            longitude = liveVal.location.longitude || longitude;
+        } else {
+          // Fallback legacy paths
+          const legacySnapshot = await rtdbAdmin.ref(`patients/${patientUid}/liveVitals`).once('value');
+          if (legacySnapshot.exists()) {
+            const liveVal = legacySnapshot.val();
+            heartRate = liveVal.heartRate || liveVal.bpm || heartRate;
+            spo2 = liveVal.spo2 || spo2;
+            temperature = liveVal.temperature || temperature;
           }
+        }
+
+        // Retrieve location lat/lng from patients/${patientUid}/location
+        const locSnapshot = await rtdbAdmin.ref(`patients/${patientUid}/location`).once('value');
+        if (locSnapshot.exists()) {
+          const locVal = locSnapshot.val();
+          latitude = locVal.lat || locVal.latitude || latitude;
+          longitude = locVal.lng || locVal.longitude || longitude;
         }
       }
     } catch (rtdbErr: any) {
-      console.warn('[Emergency Dispatch] Firebase RTDB vitals fetch failed, using defaults:', rtdbErr.message);
+      console.warn('[Emergency Dispatch] Firebase RTDB vitals/location fetch failed, using defaults:', rtdbErr.message);
     }
 
+    // Resolve human-readable address dynamically using RapidAPI reverse geocoding
+    const addressDetails = await reverseGeocode(latitude, longitude);
+    const humanAddress = addressDetails.formattedAddress;
+
     const mapsUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
-    const locationString = `Latitude ${latitude.toFixed(4)} and Longitude ${longitude.toFixed(4)}`;
+    const locationString = humanAddress;
 
     // 4. Initialize Twilio client
     const twilioSid = process.env.TWILIO_ACCOUNT_SID;
@@ -186,12 +205,13 @@ router.post('/dispatch', async (req: Request, res: Response) => {
 Age: ${age}
 Gender: ${gender}
 Location(live): ${mapsUrl}
+Address: ${humanAddress}
 Time: ${timeString}
 Distance: ${distance}`;
 
     const smsMessagePayload = `CRITICAL HEALTH ALERT: HeartSync emergency triggered for ${patientName}.
 Age: ${age} | Gender: ${gender}
-Current Location: ${mapsUrl}
+Current Location: ${humanAddress} (${mapsUrl})
 Est. Distance to ER: 4.2 km | ETA: 12 mins
 Emergency services have been dispatched.`;
 
@@ -248,12 +268,12 @@ Emergency services have been dispatched.`;
     // Set Cooldown lock timestamp upon successful dispatch
     cooldowns.set(patientUid, now);
 
-    // 7. Permanent Audit Trail Logging into PostgreSQL system_logs
+    // 7. Permanent Audit Trail Logging into PostgreSQL system_logs and alerts table
     try {
       const auditDetails = JSON.stringify({
         voiceCall: { to: ambulanceNumber, status: voiceCallSid !== 'mock_call_sid_67890' ? 'placed' : 'mocked', sid: voiceCallSid },
         notifications: dispatchNotificationsResults,
-        location: { latitude, longitude, mapsUrl }
+        location: { latitude, longitude, mapsUrl, address: humanAddress }
       });
       await dbService.query(
         `INSERT INTO system_logs (user_id, action, details)
@@ -261,8 +281,25 @@ Emergency services have been dispatched.`;
         [patientUid, 'EMERGENCY_DISPATCH', auditDetails]
       );
       console.log('[DataConnect] Success: Emergency dispatch confirmed and logged in PostgreSQL.');
+
+      const alertId = `ALERT-${Date.now()}`;
+      await dbService.query(
+        `INSERT INTO alerts (id, patient_id, severity, status, heart_rate_at_trigger, spo2_at_trigger, temp_at_trigger, ai_summary, detected_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [
+          alertId,
+          patientUid,
+          'CRITICAL',
+          'AMBULANCE_DISPATCHED',
+          heartRate,
+          spo2,
+          temperature,
+          `Twilio dispatch sequence executed. Ambulance called. WhatsApp/SMS sent to emergency contacts.`
+        ]
+      );
+      console.log('[DataConnect] Success: Emergency alert logged in alerts table in PostgreSQL.');
     } catch (logError: any) {
-      console.error('[DataConnect] PostgreSQL system_log insert failed:', logError.message);
+      console.error('[DataConnect] PostgreSQL system_log / alerts insert failed:', logError.message);
     }
 
     return res.status(200).json({
@@ -273,6 +310,7 @@ Emergency services have been dispatched.`;
         age,
         gender,
         coordinates: { latitude, longitude },
+        address: humanAddress,
         ambulanceCallSid: voiceCallSid,
         results: dispatchNotificationsResults
       }

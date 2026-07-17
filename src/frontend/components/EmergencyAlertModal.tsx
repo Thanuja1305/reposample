@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { ref, onValue, set, update } from 'firebase/database';
 import { rtdb } from '../../shared/lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { AlertOctagon, Volume2, VolumeX, ShieldAlert, Sparkles, Activity } from 'lucide-react';
+import { AlertOctagon, Volume2, VolumeX, ShieldAlert, Sparkles, Activity, MapPin } from 'lucide-react';
 
 // Web Audio API alarm sound synthesizer (bulletproof offline sound generation)
 class WebAudioAlarm {
@@ -62,15 +62,17 @@ class WebAudioAlarm {
         }
         this.ctx = null;
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore stop errors
+    }
   }
 }
 
 const alarmSound = new WebAudioAlarm();
 
-// 2D Canvas Drawing Component for real-time scrolling ECG waveforms
-const ECGCanvasChart: React.FC<{ data: number[] }> = ({ data }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+// Sub-component for rendering ECG waveform canvas inside the modal
+const ECGCanvasChart = ({ data }: { data: number[] }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -145,12 +147,10 @@ const ECGCanvasChart: React.FC<{ data: number[] }> = ({ data }) => {
 export default function EmergencyAlertModal() {
   const { user, profile } = useAuth();
   
-  // Use logged-in patient's uid, or HS-001 for demo compatibility
-  const patientUid = profile?.role === 'patient' && user?.uid ? user.uid : 'HS-001';
-
   const [isOpen, setIsOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [dispatchStatus, setDispatchStatus] = useState<'idle' | 'sending' | 'success' | 'failed'>('idle');
+  const [activePatientUid, setActivePatientUid] = useState<string>('HS-001');
 
   // Real-time vital metrics states
   const [vitals, setVitals] = useState<any>({
@@ -160,54 +160,134 @@ export default function EmergencyAlertModal() {
     ecgSegment: []
   });
   
+  const [patientDetails, setPatientDetails] = useState<any>({
+    fullName: 'Shivani',
+    age: 24,
+    gender: 'Female',
+    locationAddress: 'Flat 402, Block A, DLF Cyber City Road, Gachibowli, Hyderabad, Telangana, 500032, India'
+  });
+
   const [aiSummary, setAiSummary] = useState<string>('');
 
+  // 1. Listen for active emergency alerts
   useEffect(() => {
-    if (!patientUid) return;
+    if (!user) return;
 
-    // 1. Listen to activeAlerts/{patientUid} path
-    const alertRef = ref(rtdb, `activeAlerts/${patientUid}`);
-    const unsubAlert = onSnapshotRef(alertRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const val = snapshot.val();
-        if (val && val.resolved !== true) {
-          setIsOpen(true);
+    const isDoctor = profile?.role === 'doctor';
+    
+    if (isDoctor) {
+      // Listen to the entire activeAlerts node
+      const alertsRef = ref(rtdb, 'activeAlerts');
+      const unsubAlerts = onValue(alertsRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          // Find first unresolved alert
+          const activeId = Object.keys(val).find(key => val[key] && val[key].resolved !== true);
+          if (activeId) {
+            setActivePatientUid(activeId);
+            setIsOpen(true);
+          } else {
+            setIsOpen(false);
+          }
         } else {
           setIsOpen(false);
         }
-      } else {
-        setIsOpen(false);
+      });
+      return () => {
+        unsubAlerts();
+        alarmSound.stop();
+      };
+    } else {
+      // Patient mode: listen only to own alert
+      const myUid = user.uid || 'HS-001';
+      setActivePatientUid(myUid);
+      const alertRef = ref(rtdb, `activeAlerts/${myUid}`);
+      const unsubAlert = onValue(alertRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const val = snapshot.val();
+          if (val && val.resolved !== true) {
+            setIsOpen(true);
+          } else {
+            setIsOpen(false);
+          }
+        } else {
+          setIsOpen(false);
+        }
+      });
+      return () => {
+        unsubAlert();
+        alarmSound.stop();
+      };
+    }
+  }, [user, profile]);
+
+  // 2. Listen to live readings & AI diagnosis for the active alert patient
+  useEffect(() => {
+    if (!isOpen || !activePatientUid) return;
+
+    // Fetch demographics
+    const profileRef = ref(rtdb, `patients/${activePatientUid}/profile`);
+    const unsubProfile = onValue(profileRef, (snap) => {
+      if (snap.exists()) {
+        const val = snap.val();
+        setPatientDetails(prev => ({
+          ...prev,
+          fullName: val.fullName || val.name || prev.fullName,
+          age: val.age || prev.age,
+          gender: val.gender || prev.gender,
+          locationAddress: val.locationAddress || val.address || prev.locationAddress
+        }));
       }
     });
 
-    // Helper function for typing safety on rtdb listeners
-    function onSnapshotRef(dbRef: any, callback: (snap: any) => void) {
-      return onValue(dbRef, callback);
-    }
-
-    // 2. Listen to liveReadings/{patientUid} path for real-time modal details
-    const liveReadingsRef = ref(rtdb, `liveReadings/${patientUid}`);
+    // Listen to live readings (new unified path Patients/{uid}/liveReading)
+    const liveReadingsRef = ref(rtdb, `Patients/${activePatientUid}/liveReading`);
     const unsubReadings = onValue(liveReadingsRef, (snapshot) => {
       if (snapshot.exists()) {
         const val = snapshot.val();
         setVitals({
-          heartRate: val.heartRate !== undefined ? val.heartRate : '--',
+          heartRate: val.heartRate !== undefined ? val.heartRate : (val.bpm !== undefined ? val.bpm : '--'),
           spo2: val.spo2 !== undefined ? val.spo2 : '--',
-          temperature: val.temperature !== undefined ? val.temperature : '--',
-          ecgSegment: Array.isArray(val.ecgSegment) ? val.ecgSegment : (Array.isArray(val.latestEcgSegment) ? val.latestEcgSegment : [])
+          temperature: val.temperature !== undefined ? val.temperature : (val.temperature_c !== undefined ? val.temperature_c : '--'),
+          ecgSegment: Array.isArray(val.ecgSegment) ? val.ecgSegment : (Array.isArray(val.ecgData) ? val.ecgData : [])
         });
-        setAiSummary(val.latestAiReportSummary || val.summary || '');
+        if (val.locationAddress) {
+          setPatientDetails(prev => ({ ...prev, locationAddress: val.locationAddress }));
+        }
+      } else {
+        // Fallback to legacy path
+        const legacyRef = ref(rtdb, `patients/${activePatientUid}/liveVitals`);
+        onValue(legacyRef, (legSnap) => {
+          if (legSnap.exists()) {
+            const val = legSnap.val();
+            setVitals({
+              heartRate: val.heartRate !== undefined ? val.heartRate : (val.bpm !== undefined ? val.bpm : '--'),
+              spo2: val.spo2 !== undefined ? val.spo2 : '--',
+              temperature: val.temperature !== undefined ? val.temperature : (val.temperature_c !== undefined ? val.temperature_c : '--'),
+              ecgSegment: Array.isArray(val.ecgSegment) ? val.ecgSegment : (Array.isArray(val.ecgData) ? val.ecgData : [])
+            });
+          }
+        }, { onlyOnce: true });
+      }
+    });
+
+    // Listen to AI diagnosis
+    const aiDiagRef = ref(rtdb, `patients/${activePatientUid}/aiDiagnosis`);
+    const unsubAi = onValue(aiDiagRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.val();
+        setAiSummary(val.summary || val.result || val.diagnosis || '');
       }
     });
 
     return () => {
-      unsubAlert();
+      unsubProfile();
       unsubReadings();
-      alarmSound.stop();
+      unsubAi();
     };
-  }, [patientUid]);
+  }, [isOpen, activePatientUid]);
 
-  // Handle audio play/stop on alert pop-up trigger
+  // Handle alarm sound mute/trigger state
   useEffect(() => {
     if (isOpen && !isMuted) {
       alarmSound.start();
@@ -227,26 +307,27 @@ export default function EmergencyAlertModal() {
       setDispatchStatus('idle');
 
       // Clear alert from RTDB activeAlerts
-      await set(ref(rtdb, `activeAlerts/${patientUid}`), null);
+      await set(ref(rtdb, `activeAlerts/${activePatientUid}`), null);
 
       // Reset patient's emergency state in RTDB paths
-      await update(ref(rtdb, `patients/${patientUid}/liveVitals`), {
+      await update(ref(rtdb, `patients/${activePatientUid}/liveVitals`), {
         emergency: false,
         isAbnormal: false,
         condition: 'Normal',
         timestamp: Date.now()
       });
-      await update(ref(rtdb, `liveReadings/${patientUid}`), {
+      await update(ref(rtdb, `Patients/${activePatientUid}/liveReading`), {
+        isAbnormal: false,
+        emergency: false,
         condition: 'Normal',
         timestamp: Date.now()
       });
-
     } catch (e) {
       console.warn("Failed to resolve and clear active alert:", e);
     }
   };
 
-  // Dispatch emergency action: calls backend API and plays spinner
+  // Dispatch emergency action: calls backend API
   const handleDispatch = async () => {
     try {
       setDispatchStatus('sending');
@@ -257,7 +338,7 @@ export default function EmergencyAlertModal() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ patientUid })
+        body: JSON.stringify({ patientUid: activePatientUid })
       });
 
       if (res.ok) {
@@ -278,7 +359,7 @@ export default function EmergencyAlertModal() {
 
   return (
     <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg bg-slate-900 border-2 border-red-500/30 rounded-[32px] overflow-hidden shadow-[0_30px_70px_rgba(239,68,68,0.25)] flex flex-col text-slate-100">
+      <div className="w-full max-w-lg bg-slate-900 border-2 border-red-500/30 rounded-[32px] overflow-hidden shadow-[0_30px_70px_rgba(239,68,68,0.25)] flex flex-col text-slate-100 animate-in fade-in zoom-in duration-200">
         
         {/* Header bar */}
         <div className="bg-gradient-to-r from-red-600 to-red-500 px-6 py-4 flex items-center justify-between border-b border-red-500/20">
@@ -304,6 +385,21 @@ export default function EmergencyAlertModal() {
 
         <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[80vh]">
           
+          {/* Patient Details & Location Card */}
+          <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
+            <div className="flex justify-between text-xs font-bold text-slate-400">
+              <span>Patient: <strong className="text-white">{patientDetails.fullName}</strong></span>
+              <span>Age: <strong className="text-white">{patientDetails.age}</strong></span>
+              <span>Gender: <strong className="text-white">{patientDetails.gender}</strong></span>
+            </div>
+            <div className="text-xs font-bold text-slate-400 mt-1">
+              <span className="flex items-start gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                <span>Location: <strong className="text-slate-200">{patientDetails.locationAddress}</strong></span>
+              </span>
+            </div>
+          </div>
+
           {/* AI Assessment summary card */}
           <div className="bg-slate-950/50 border border-slate-800 rounded-2xl p-4">
             <div className="flex items-center gap-1.5 text-amber-400 font-bold mb-1">
@@ -351,13 +447,13 @@ export default function EmergencyAlertModal() {
           <ECGCanvasChart data={vitals.ecgSegment} />
 
           {/* Overlay actions bar */}
-          <div className="flex items-center gap-3 mt-2 border-t border-slate-800/80 pt-4">
+          <div className="flex items-center gap-3 mt-2 border-t border-slate-880/80 pt-4">
             
             <button
               type="button"
               disabled={isFrozen}
               onClick={handleIgnore}
-              className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all border border-slate-700/60 active:scale-95 disabled:opacity-50"
+              className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all border border-slate-700/60 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               Ignore Alert
             </button>
@@ -366,7 +462,7 @@ export default function EmergencyAlertModal() {
               type="button"
               disabled={isFrozen}
               onClick={handleDispatch}
-              className="flex-1 py-3 px-4 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-[0_8px_20px_rgba(239,68,68,0.2)] transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60"
+              className="flex-1 py-3 px-4 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-[0_8px_20px_rgba(239,68,68,0.2)] transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 cursor-pointer"
             >
               {dispatchStatus === 'sending' ? (
                 <>
