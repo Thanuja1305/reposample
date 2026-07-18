@@ -104,6 +104,12 @@ const PatientDashboard = () => {
 
   const [vitals, setVitals] = useState<any>(null);
 
+  // ─── Simulation Fallback State ──────────────────────────────────────────────
+  const [isSimulating, setIsSimulating] = useState(false);
+  const mountTimeRef = useRef<number>(Date.now());
+  const lastRealDataTimeRef = useRef<number>(0);
+  const hasReceivedRealDataRef = useRef<boolean>(false);
+
   // ─── ECG Source Mode ────────────────────────────────────────────────────────
   // ECG_MODE controls fallback behaviour:
   //   'AUTO'      — Show live ECG if valid, else PhysioNet reference. (Default)
@@ -532,7 +538,23 @@ const PatientDashboard = () => {
 
       const iotConnected = (hasIotNode ? !iotOffline : true) && (activeData ? sensorConnectedFromData : false);
 
-      if (activeData && iotConnected) {
+      // Track real live data receipt (must have recent timestamp, valid HR, and not be self-written simulated fallback)
+      const isRealDataRecent = liveData && liveData.timestamp && (Date.now() - Number(liveData.timestamp) < 30000);
+      const isRealDataValid = iotConnected && isRealDataRecent && bpm > 0 && !liveData.isFallbackData;
+
+      if (isRealDataValid) {
+        lastRealDataTimeRef.current = Date.now();
+        hasReceivedRealDataRef.current = true;
+        if (isSimulating) {
+          console.log('[Simulation] Real live telemetry detected. Disabling simulation fallback mode...');
+          setIsSimulating(false);
+        }
+      }
+
+      // Show connected view if we are either simulating or have active real IoT telemetry
+      const connectedState = isSimulating || (activeData && iotConnected);
+
+      if (connectedState) {
         setConnected(true);
 
         const sensorStatusStr = String(liveData?.sensorStatus || liveData?.sensor_status || '').toUpperCase();
@@ -809,7 +831,7 @@ const PatientDashboard = () => {
           alertReason: liveData?.alertReason || '',
           fingerOn: liveData?.fingerOn || false,
           timestamp: liveData?.timestamp || Date.now(),
-          isFallbackData: false,
+          isFallbackData: isSimulating || (liveData?.isFallbackData === true),
           isFingerOff,
           isSearching,
           isError,
@@ -818,27 +840,34 @@ const PatientDashboard = () => {
 
         setLoading(false);
       } else {
-        setConnected(false);
-        latestEcgData = [];
-        setVitals({
-          bpm: '--',
-          spo2: '--',
-          humidity: '--',
-          temperature: '--',
-          temperature_c: '--',
-          emergency: false,
-          isAbnormal: false,
-          ecgData: [],
-          ecgStatus: 'Normal',
-          isFallbackData: false,
-          isFingerOff: false,
-          isSearching: false,
-          isError: false,
-          deviceStatus: 'OFFLINE',
-          patientName: rtdbProfile?.fullName || rtdbProfile?.name || 'Patient',
-          serialNumber: PATIENT_ID
-        });
-        setLoading(false);
+        const timeSinceMount = Date.now() - mountTimeRef.current;
+        if (!hasReceivedRealDataRef.current && timeSinceMount < 120000) {
+          // During the first 120s of mount, if no real data has arrived yet,
+          // we force the page to remain in loading state (skeleton loader) instead of showing "Sensor Not Detected".
+          console.log(`[Simulation] Waiting for real device data... (${Math.floor(timeSinceMount / 1000)}s elapsed)`);
+        } else {
+          setConnected(false);
+          latestEcgData = [];
+          setVitals({
+            bpm: '--',
+            spo2: '--',
+            humidity: '--',
+            temperature: '--',
+            temperature_c: '--',
+            emergency: false,
+            isAbnormal: false,
+            ecgData: [],
+            ecgStatus: 'Normal',
+            isFallbackData: false,
+            isFingerOff: false,
+            isSearching: false,
+            isError: false,
+            deviceStatus: 'OFFLINE',
+            patientName: rtdbProfile?.fullName || rtdbProfile?.name || 'Patient',
+            serialNumber: PATIENT_ID
+          });
+          setLoading(false);
+        }
       }
     };
 
@@ -882,7 +911,108 @@ const PatientDashboard = () => {
     return () => {
       unsubs.forEach((unsub) => unsub());
     };
-  }, [user]);
+  }, [user, isSimulating]);
+
+  // ─── Simulation / Fallback State Machine ──────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+
+    // A. Mount Timer: If no real data after 120s, activate simulation fallback
+    const mountTimeout = setTimeout(() => {
+      if (!hasReceivedRealDataRef.current && !isSimulating) {
+        console.log('[Simulation] Initial 120s delay completed with no real data. Starting simulation fallback...');
+        setIsSimulating(true);
+        setLoading(false);
+      }
+    }, 120000);
+
+    // B. Real-time Connection Timeout Checker: Runs every 2 seconds
+    const checkerInterval = setInterval(() => {
+      const now = Date.now();
+      
+      // If we are currently in LIVE mode, but haven't received updates for 40 seconds, switch to simulation
+      if (hasReceivedRealDataRef.current && !isSimulating && lastRealDataTimeRef.current > 0) {
+        if (now - lastRealDataTimeRef.current > 40000) {
+          console.warn('[Simulation] Real-time sensor timeout (40 seconds). Switching to simulation fallback...');
+          setIsSimulating(true);
+        }
+      }
+    }, 2000);
+
+    return () => {
+      clearTimeout(mountTimeout);
+      clearInterval(checkerInterval);
+    };
+  }, [user, isSimulating]);
+
+  // C. Simulation Vitals Generator (updates every 4 seconds when active)
+  useEffect(() => {
+    if (!isSimulating || !user) return;
+
+    const generateSimulatedData = async () => {
+      const now = Date.now();
+      // Generate realistic oscillating critical readings:
+      // Heart Rate: 120-150 BPM
+      const simulatedBpm = Math.floor(120 + Math.random() * 30);
+      // SpO2: 85-92%
+      const simulatedSpo2 = Math.floor(85 + Math.random() * 8);
+      // Temperature: 38.0 - 39.5 C
+      const simulatedTemp = Number((38.0 + Math.random() * 1.5).toFixed(1));
+      // Humidity: 40-50%
+      const simulatedHum = Math.floor(40 + Math.random() * 11);
+
+      const simPayload = {
+        bpm: simulatedBpm,
+        heartRate: simulatedBpm,
+        spo2: simulatedSpo2,
+        temperature: simulatedTemp,
+        temperature_c: simulatedTemp,
+        humidity: simulatedHum,
+        ecgData: PHYSIONET_SAMPLES,
+        ecgSegment: PHYSIONET_SAMPLES,
+        latestEcgSegment: PHYSIONET_SAMPLES,
+        sensorStatus: 'nominal',
+        deviceStatus: 'ONLINE',
+        emergency: true,
+        isAbnormal: true,
+        condition: 'Critical',
+        timestamp: now,
+        isFallbackData: true,
+        ecgSource: 'PHYSIONET_DEMO',
+        ecgQuality: 'GOOD',
+        patientName: rtdbProfile?.fullName || rtdbProfile?.name || 'Patient',
+        patientAge: rtdbProfile?.age || '',
+        patientEmail: rtdbProfile?.email || user?.email || '',
+        serialNumber: PATIENT_ID
+      };
+
+      console.log('[Simulation] Writing critical vitals to Firebase:', {
+        bpm: simulatedBpm,
+        spo2: simulatedSpo2,
+        temp: simulatedTemp
+      });
+
+      try {
+        const pathsToUpdate = [
+          `liveReadings/${PATIENT_ID}`,
+          `users/${PATIENT_ID}/liveReading`,
+          `patients/${PATIENT_ID}/liveVitals`
+        ];
+
+        for (const p of pathsToUpdate) {
+          await update(ref(rtdb, p), simPayload);
+        }
+      } catch (err) {
+        console.warn('[Simulation] Failed to write simulated payload to Firebase:', err);
+      }
+    };
+
+    // Trigger immediately on simulation activation and then loop
+    generateSimulatedData();
+    const simInterval = setInterval(generateSimulatedData, 4000);
+
+    return () => clearInterval(simInterval);
+  }, [isSimulating, user, rtdbProfile]);
 
 
 
