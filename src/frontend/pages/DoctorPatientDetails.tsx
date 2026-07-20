@@ -106,6 +106,9 @@ const DoctorPatientDetails = () => {
     const activeId = id;
 
     const vitalsPaths = [
+      `Patients/${activeId}/liveReading`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,
+      `patients/${activeId}/liveReading`,
       `patients/${activeId}/liveVitals`,
       `liveHealthMetrics/${activeId}`,
       `liveHealthMetrics/HS-001`,
@@ -116,6 +119,8 @@ const DoctorPatientDetails = () => {
     ];
 
     const ecgPaths = [
+      `Patients/${activeId}/liveReading/ecg`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
       `patients/${activeId}/ecgData/waveform`,
       `patients/${activeId}/ecgData`,
       `liveHealthMetrics/${activeId}/ecgData`,
@@ -128,6 +133,8 @@ const DoctorPatientDetails = () => {
     ];
 
     const locationPaths = [
+      `Patients/${activeId}/liveReading/location`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/location`,
       `patients/${activeId}/location`,
       `liveHealthMetrics/${activeId}/location`,
       `liveHealthMetrics/HS-001/location`,
@@ -135,6 +142,8 @@ const DoctorPatientDetails = () => {
     ];
 
     const diagnosisPaths = [
+      `Patients/${activeId}/liveReading/aiDiagnosis`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/aiDiagnosis`,
       `patients/${activeId}/aiDiagnosis`,
       `liveHealthMetrics/${activeId}/aiDiagnosis`,
       `liveHealthMetrics/HS-001/aiDiagnosis`,
@@ -143,6 +152,7 @@ const DoctorPatientDetails = () => {
 
     const profilePaths = [
       `users/${activeId}/profile`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/profile`,
       `patients/${activeId}/profile`,
       `liveHealthMetrics/${activeId}/profile`,
       `liveHealthMetrics/HS-001/profile`
