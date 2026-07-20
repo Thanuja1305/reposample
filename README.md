@@ -489,8 +489,50 @@ GOOGLE_MAPS_API_KEY=
 ## Start the Development Server
 
 ```bash
+# Start Frontend Dev Server
 npm run dev
+
+# Start Backend Server
+npm run backend
 ```
+
+---
+
+# 🚀 Production Deployment Guide
+
+### Option 1: Frontend on Vercel + Backend on Render
+
+#### 1. Deploy Frontend to Vercel
+1. Import GitHub repository `Thanuja1305/reposample` into Vercel.
+2. Select Framework: **Vite**, Build Command: `npm run build`, Output Directory: `dist`.
+3. Add Environment Variables in Vercel Project Settings:
+   - `VITE_FIREBASE_API_KEY`
+   - `VITE_FIREBASE_AUTH_DOMAIN`
+   - `VITE_FIREBASE_PROJECT_ID`
+   - `VITE_FIREBASE_STORAGE_BUCKET`
+   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
+   - `VITE_FIREBASE_APP_ID`
+   - `VITE_FIREBASE_DATABASE_URL`
+   - `VITE_BACKEND_URL` (Set to your deployed Render URL e.g. `https://heartsync-backend.onrender.com`)
+
+#### 2. Deploy Backend to Render
+1. Create a **New Web Service** on Render connected to `Thanuja1305/reposample`.
+2. Configure Settings:
+   - **Environment**: Node
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+3. Add Environment Variables in Render:
+   - `PORT`: `5000`
+   - `NODE_ENV`: `production`
+   - `GEMINI_API_KEY`: Your Google Gemini API Key
+   - `OPENAI_API_KEY`: Your OpenAI API Key (spare failover provider)
+   - `FIREBASE_PROJECT_ID`: `heartsync-3b608`
+   - `FIREBASE_CLIENT_EMAIL`: Service Account Email
+   - `FIREBASE_PRIVATE_KEY`: Service Account Private Key
+   - `FIREBASE_DATABASE_URL`: `https://heartsync-3b608-default-rtdb.asia-southeast1.firebasedatabase.app`
+   - `TWILIO_ACCOUNT_SID`
+   - `TWILIO_AUTH_TOKEN`
+   - `TWILIO_PHONE_NUMBER`
 
 ---
 
