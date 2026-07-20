@@ -47,7 +47,7 @@ const DoctorEmergencyModalComponent: React.FC<DoctorEmergencyModalProps> = ({
   const patientId = patient.id || patient.serialNumber || 'HS-PATIENT';
   const age = profile.age || '--';
   const gender = profile.gender || 'Unspecified';
-  const timestamp = vitals.timestamp ? new Date(vitals.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+  const timestamp = vitals.timestamp ? new Date(vitals.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
     <AnimatePresence>
@@ -55,142 +55,136 @@ const DoctorEmergencyModalComponent: React.FC<DoctorEmergencyModalProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 lg:p-6"
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4"
       >
         <motion.div
-          initial={{ scale: 0.95, y: 15 }}
-          animate={{ scale: 1, y: 0 }}
-          exit={{ scale: 0.95, y: 15 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="bg-white rounded-[28px] shadow-2xl w-full max-w-[480px] overflow-hidden flex flex-col max-h-[90vh] border border-red-200"
+          initial={{ scale: 0.94, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.94, opacity: 0, y: 10 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+          className="bg-white rounded-[24px] shadow-2xl w-[92%] max-w-[440px] overflow-hidden flex flex-col max-h-[85vh] border border-red-200"
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-red-700 via-red-800 to-red-900 p-5 pt-6 pb-7 relative shrink-0 text-white">
-            <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+          <div className="bg-gradient-to-r from-red-700 to-red-900 p-4 sm:p-5 relative shrink-0 text-white">
+            <div className="absolute top-3.5 right-3.5 flex items-center gap-1.5 z-20">
               <button
                 onClick={onToggleMute}
                 title={isMuted ? "Unmute Alarm" : "Mute Alarm"}
-                className="text-white bg-black/25 hover:bg-white/20 transition-all p-2 rounded-full shadow-sm cursor-pointer active:scale-95"
+                className="text-white bg-black/20 hover:bg-white/20 transition-all p-1.5 rounded-full cursor-pointer active:scale-95"
               >
-                {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
               </button>
               <button
                 onClick={onClose}
                 title="Dismiss Popup"
-                className="text-white bg-black/25 hover:bg-red-950 transition-all p-2 rounded-full shadow-sm cursor-pointer active:scale-95"
+                className="text-white bg-black/20 hover:bg-red-950 transition-all p-1.5 rounded-full cursor-pointer active:scale-95"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="flex items-center gap-3.5 relative z-10">
-              <div className="w-11 h-11 bg-white/15 backdrop-blur-md rounded-2xl flex items-center justify-center text-white shrink-0 shadow-inner">
-                <ShieldAlert className="w-6 h-6 animate-pulse" />
+            <div className="flex items-center gap-3 relative z-10">
+              <div className="w-9 h-9 bg-white/15 backdrop-blur-md rounded-xl flex items-center justify-center text-white shrink-0">
+                <ShieldAlert className="w-5 h-5 animate-pulse" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="px-2 py-0.5 bg-red-950/60 text-red-200 text-[9px] font-black uppercase tracking-widest rounded-full border border-red-500/30">
+                  <span className="px-2 py-0.5 bg-red-950/70 text-red-200 text-[8px] font-black uppercase tracking-widest rounded-full border border-red-400/30">
                     CRITICAL ALERT
                   </span>
-                  <span className="text-[10px] font-medium text-red-200/90">{timestamp}</span>
+                  <span className="text-[9px] font-medium text-red-200/90">{timestamp}</span>
                 </div>
-                <h2 className="text-white font-black text-base tracking-tight truncate">
-                  🚨 Emergency Cardiac Event
+                <h2 className="text-white font-black text-sm tracking-tight truncate">
+                  🚨 Critical Emergency Alert
                 </h2>
               </div>
             </div>
           </div>
 
           {/* Body Content */}
-          <div className="p-5 pt-5 bg-white overflow-y-auto flex-1 flex flex-col gap-4">
+          <div className="p-4 bg-white overflow-y-auto flex-1 flex flex-col gap-3">
             {/* Patient Info Bar */}
-            <div className="bg-slate-50 border border-slate-200/70 rounded-2xl p-3.5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 text-red-800 font-black flex items-center justify-center text-sm border border-red-200 shrink-0">
+            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-red-100 text-red-800 font-black flex items-center justify-center text-xs border border-red-200 shrink-0">
                   {patientName.charAt(0)}
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 leading-tight">{patientName}</h3>
-                  <p className="text-[10px] font-medium text-slate-500">
+                  <h3 className="text-xs font-bold text-slate-900 leading-tight">{patientName}</h3>
+                  <p className="text-[9px] font-medium text-slate-500">
                     ID: {patientId.slice(0, 10)} • {gender} • {age} Yrs
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => onViewPatient(patientId)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold rounded-xl transition-colors shadow-sm shrink-0"
-              >
-                <Eye className="w-3 h-3" /> View Patient
-              </button>
             </div>
 
             {/* Live Critical Values Grid */}
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2">
               {/* Heart Rate */}
-              <div className={`p-3.5 rounded-2xl border flex flex-col justify-between transition-colors ${
+              <div className={`p-2.5 rounded-xl border flex flex-col justify-between transition-colors ${
                 isBpmCritical ? 'bg-red-50/90 border-red-200 text-red-900' : 'bg-slate-50 border-slate-200 text-slate-900'
               }`}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                    <Heart className="w-3 h-3 text-red-500 fill-current" /> Heart Rate
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Heart className="w-2.5 h-2.5 text-red-500 fill-current" /> Heart Rate
                   </span>
-                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
-                    isBpmCritical ? 'bg-red-200/80 text-red-800' : 'bg-slate-200 text-slate-700'
+                  <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded ${
+                    isBpmCritical ? 'bg-red-200/90 text-red-900' : 'bg-slate-200 text-slate-700'
                   }`}>
                     {isBpmCritical ? 'CRITICAL' : 'NORMAL'}
                   </span>
                 </div>
-                <p className="text-2xl font-black tracking-tight">{bpm || '--'} <span className="text-xs font-bold opacity-75">BPM</span></p>
+                <p className="text-xl font-black tracking-tight">{bpm || '--'} <span className="text-[10px] font-bold opacity-75">BPM</span></p>
               </div>
 
               {/* SpO2 */}
-              <div className={`p-3.5 rounded-2xl border flex flex-col justify-between transition-colors ${
+              <div className={`p-2.5 rounded-xl border flex flex-col justify-between transition-colors ${
                 isSpo2Critical ? 'bg-red-50/90 border-red-200 text-red-900' : 'bg-slate-50 border-slate-200 text-slate-900'
               }`}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                    <Activity className="w-3 h-3 text-blue-500" /> SpO₂ Oxygen
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Activity className="w-2.5 h-2.5 text-blue-500" /> SpO₂ Oxygen
                   </span>
-                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${
-                    isSpo2Critical ? 'bg-red-200/80 text-red-800' : 'bg-slate-200 text-slate-700'
+                  <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded ${
+                    isSpo2Critical ? 'bg-red-200/90 text-red-900' : 'bg-slate-200 text-slate-700'
                   }`}>
                     {isSpo2Critical ? 'LOW SPO2' : 'NORMAL'}
                   </span>
                 </div>
-                <p className="text-2xl font-black tracking-tight">{spo2 || '--'} <span className="text-xs font-bold opacity-75">%</span></p>
+                <p className="text-xl font-black tracking-tight">{spo2 || '--'} <span className="text-[10px] font-bold opacity-75">%</span></p>
               </div>
 
               {/* Temperature */}
-              <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+              <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
                 isTempCritical ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200 text-slate-900'
               }`}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                    <Thermometer className="w-3 h-3 text-amber-500" /> Temp
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Thermometer className="w-2.5 h-2.5 text-amber-500" /> Temp
                   </span>
                 </div>
-                <p className="text-lg font-black">{temp} <span className="text-xs font-bold opacity-75">°C</span></p>
+                <p className="text-base font-black">{temp} <span className="text-[10px] font-bold opacity-75">°C</span></p>
               </div>
 
               {/* Humidity */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col justify-between text-slate-900">
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col justify-between text-slate-900">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                    <Droplets className="w-3 h-3 text-cyan-500" /> Humidity
+                  <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Droplets className="w-2.5 h-2.5 text-cyan-500" /> Humidity
                   </span>
                 </div>
-                <p className="text-lg font-black">{humidity} <span className="text-xs font-bold opacity-75">%</span></p>
+                <p className="text-base font-black">{humidity} <span className="text-[10px] font-bold opacity-75">%</span></p>
               </div>
             </div>
 
             {/* ECG Live Waveform Preview */}
-            <div className="border border-slate-200 rounded-2xl overflow-hidden h-[105px] relative bg-white shadow-inner">
-              <div className="absolute top-2 left-2 z-10 bg-slate-900/85 text-white text-[8px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" /> LIVE ECG WAVEFORM
+            <div className="border border-slate-200 rounded-xl overflow-hidden h-[85px] relative bg-white shadow-inner">
+              <div className="absolute top-1.5 left-1.5 z-10 bg-slate-900/85 text-white text-[7px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
+                <span className="w-1 h-1 rounded-full bg-red-500 animate-pulse" /> LIVE ECG WAVEFORM
               </div>
-              <div className="pt-3 h-full w-[104%] -ml-[2%]">
+              <div className="pt-2 h-full w-[104%] -ml-[2%]">
                 <React.Suspense fallback={
-                  <div className="h-full w-full flex items-center justify-center bg-slate-50 text-[9px] font-bold text-slate-400">
+                  <div className="h-full w-full flex items-center justify-center bg-slate-50 text-[8px] font-bold text-slate-400">
                     Loading ECG Waveform...
                   </div>
                 }>
@@ -206,52 +200,38 @@ const DoctorEmergencyModalComponent: React.FC<DoctorEmergencyModalProps> = ({
             </div>
 
             {/* AI Medical Assessment */}
-            <div className="bg-red-50/60 border border-red-100 rounded-2xl p-3.5">
-              <p className="text-[9px] font-bold text-red-700 uppercase tracking-widest mb-1 flex items-center gap-1">
-                <Activity className="w-3 h-3" /> AI Clinical Assessment
+            <div className="bg-red-50/60 border border-red-100 rounded-xl p-3">
+              <p className="text-[8px] font-bold text-red-700 uppercase tracking-widest mb-0.5 flex items-center gap-1">
+                <Activity className="w-2.5 h-2.5" /> AI Clinical Assessment
               </p>
-              <p className="text-xs text-slate-800 font-medium leading-relaxed">
+              <p className="text-[11px] text-slate-800 font-medium leading-tight">
                 {vitals.aiDiagnosis?.summary || vitals.aiDiagnosis?.result || 'Critical biometric parameters detected. Immediate medical intervention required.'}
               </p>
             </div>
-
-            {/* Location Status */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-xl bg-red-100 text-red-700 flex items-center justify-center shrink-0">
-                  <MapPin className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-900">GPS Telemetry Locked</p>
-                  <p className="text-[9px] text-slate-500 font-medium">Ready for dispatch routing</p>
-                </div>
-              </div>
-              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded-full">
-                ONLINE
-              </span>
-            </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center gap-2 shrink-0">
-            <button
-              onClick={onIgnoreAlert}
-              className="flex-1 py-3 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
-            >
-              <AlertCircle className="w-3.5 h-3.5 text-slate-500" /> Ignore
-            </button>
+          {/* Action Buttons Footer */}
+          <div className="p-3 bg-slate-50 border-t border-slate-100 flex flex-col gap-2 shrink-0">
             <button
               onClick={() => onViewPatient(patientId)}
-              className="flex-1 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95"
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
             >
-              <Eye className="w-3.5 h-3.5 text-white" /> View Patient
+              <Eye className="w-3.5 h-3.5 text-white" /> View Patient Report
             </button>
-            <button
-              onClick={onConfirmCritical}
-              className="flex-[1.2] py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md shadow-red-600/30 active:scale-95"
-            >
-              <Phone className="w-3.5 h-3.5 fill-current" /> Call Emergency
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onIgnoreAlert}
+                className="flex-1 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+              >
+                <AlertCircle className="w-3.5 h-3.5 text-slate-500" /> Ignore Alert
+              </button>
+              <button
+                onClick={onConfirmCritical}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md shadow-red-600/20 active:scale-98"
+              >
+                <Phone className="w-3.5 h-3.5 fill-current" /> Call Emergency
+              </button>
+            </div>
           </div>
         </motion.div>
       </motion.div>
