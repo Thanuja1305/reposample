@@ -21,15 +21,19 @@ const databaseURL = process.env.FIREBASE_DATABASE_URL;
 function parsePrivateKey(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
 
-  // Strip surrounding JSON double-quotes if present (e.g. pasted with quotes from JSON file)
   let key = raw.trim();
+  // If it's the template placeholder, return undefined to skip throwing error
+  if (key.includes('YOUR_PRIVATE_KEY_HERE')) return undefined;
+
   if (key.startsWith('"') && key.endsWith('"')) {
     key = key.slice(1, -1);
   }
 
-  // Replace every literal backslash-n sequence (\\n in source = \n as two chars in the string)
-  // that was NOT already replaced by the shell with a real newline character.
   key = key.replace(/\\n/g, '\n');
+
+  if (!key.includes('-----BEGIN PRIVATE KEY-----')) {
+    return undefined;
+  }
 
   return key;
 }
@@ -39,8 +43,8 @@ const privateKey = parsePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
 let rtdbAdmin: Database | null = null;
 
 if (!projectId || !clientEmail || !privateKey || !databaseURL) {
-  console.warn('[Firebase Admin] Missing Firebase Admin credentials in environment variables.');
-  console.warn('[Firebase Admin] Live telemetry updates to RTDB might fail. Please configure FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and FIREBASE_DATABASE_URL.');
+  console.warn('[Firebase Admin] Notice: FIREBASE_PRIVATE_KEY is missing or unconfigured.');
+  console.warn('[Firebase Admin] To enable Firebase Admin SDK on Render, add FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, FIREBASE_PROJECT_ID, and FIREBASE_DATABASE_URL to Environment Variables.');
 } else {
   try {
     if (getApps().length === 0) {

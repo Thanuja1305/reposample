@@ -47,7 +47,11 @@ if (hasPgConfig) {
     useFallback = true;
   }
 } else {
-  console.warn('⚠️ No PostgreSQL configuration found in environment variables. Falling back to in-memory relational database.');
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('⚠️ [Production Warning] No DATABASE_URL or POSTGRES_URL configured in environment variables. Operating with Firebase RTDB & in-memory relational fallback database.');
+  } else {
+    console.log('ℹ️ [Development] No PostgreSQL configuration found. Operating with in-memory relational fallback database.');
+  }
   useFallback = true;
 }
 
