@@ -115,7 +115,7 @@ const PatientDashboard = () => {
   //   'AUTO'      — Show live ECG if valid, else PhysioNet reference. (Default)
   //   'LIVE_ONLY' — Only show live sensor data. Show NO_SIGNAL if unavailable.
   //   'DEMO_ONLY' — Always show PhysioNet reference ECG.
-  const ECG_MODE: 'AUTO' | 'LIVE_ONLY' | 'DEMO_ONLY' = 'AUTO';
+  const ECG_MODE: string = 'AUTO';
   const [ecgSource, setEcgSource] = useState<ECGSource>('NO_SIGNAL');
 
 
