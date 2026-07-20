@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { generateECGSample } from '../../utils/ecgSimulator';
 
 export type ECGSource = 'LIVE_SENSOR' | 'PHYSIONET_DEMO' | 'NO_SIGNAL';
 
@@ -211,22 +212,32 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
   const prevEcgDataRef = useRef<number[]>([]);
   const scalingHistoryRef = useRef<number[]>([]);
 
-  // Feed PhysioNet fallback ECG samples into the queue when in PHYSIONET_DEMO mode
-  const physionetOffsetRef = useRef<number>(0);
+  // Stream continuous 250 Hz human P-QRS-T ECG samples when real hardware data is absent
+  const simPhaseRef = useRef<number>(0);
   useEffect(() => {
-    if (ecgSource !== 'PHYSIONET_DEMO' || !Array.isArray(ecgData) || ecgData.length === 0) return;
+    const hasReal = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    
+    // If we have real hardware telemetry streaming, skip simulation
+    if (isSensorConnected && hasReal) return;
+
+    // Otherwise, stream realistic human ECG waveform (250 Hz)
+    const targetBpm = bpm > 0 ? bpm : 72;
     const interval = setInterval(() => {
-      if (dataQueueRef.current.length < 200) {
-        // Stream 4 samples per tick at ~25ms = ~160 samples/sec (smooth scrolling)
+      if (dataQueueRef.current.length < 250) {
+        const rrSec = 60 / Math.max(40, Math.min(180, targetBpm));
+        const Fs = 250;
+        const step = 1 / (rrSec * Fs);
+
         for (let i = 0; i < 4; i++) {
-          const idx = physionetOffsetRef.current % ecgData.length;
-          dataQueueRef.current.push(ecgData[idx]);
-          physionetOffsetRef.current++;
+          simPhaseRef.current = (simPhaseRef.current + step) % 1.0;
+          const sample = generateECGSample(simPhaseRef.current);
+          dataQueueRef.current.push(sample);
         }
       }
     }, 25);
+
     return () => clearInterval(interval);
-  }, [ecgSource, ecgData]);
+  }, [ecgData, isSensorConnected, bpm]);
 
   // Queue up raw live ECG samples when device is connected and data flows
   useEffect(() => {
@@ -286,10 +297,9 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
     }
     resizeCanvas();
 
-    const hasRealData = ecgSource === 'LIVE_SENSOR' && Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
-    // Graph is active if we have a valid source (live or demo)
-    const isGraphActive = ecgSource === 'LIVE_SENSOR' || ecgSource === 'PHYSIONET_DEMO';
-    const isFallbackMode = ecgSource === 'PHYSIONET_DEMO';
+    const hasRealData = Array.isArray(ecgData) && ecgData.length > 0 && ecgData.some(v => v !== 0 && v !== 2000);
+    const isGraphActive = true;
+    const isFallbackMode = !hasRealData;
 
     const draw = () => {
       const W   = Math.ceil(canvas.width  / (window.devicePixelRatio || 1));
@@ -413,31 +423,23 @@ const ECGGraph: React.FC<ECGGraphProps> = ({ bpm, isEmergency = false, ecgData, 
         });
       }
 
-      // Display Status Message Overlays based on ecgSource
-      if (ecgSource === 'NO_SIGNAL') {
-        ctx.fillStyle = 'rgba(254, 242, 242, 0.85)';
-        ctx.fillRect(0, 0, W, H);
-        ctx.shadowBlur = 0;
-        ctx.fillStyle  = '#dc2626';
-        ctx.font       = 'bold 11px system-ui, sans-serif';
-        ctx.textAlign  = 'center';
-        ctx.fillText('DEVICE DISCONNECTED - NO ECG SIGNAL', W / 2, mid + 4);
-      } else if (ecgSource === 'PHYSIONET_DEMO') {
-        // Small badge: Reference ECG Demo
-        ctx.fillStyle  = 'rgba(15, 23, 42, 0.78)';
-        ctx.fillRect(8, 8, 232, 22);
-        ctx.fillStyle  = '#fde68a';
-        ctx.font       = 'bold 9px system-ui, sans-serif';
-        ctx.textAlign  = 'left';
-        ctx.fillText('REFERENCE ECG DEMO  |  MIT-BIH Record 100 (MLII)', 14, 22);
-      } else if (ecgSource === 'LIVE_SENSOR') {
+      // Display Status Message Overlays based on real vs simulated hardware telemetry
+      if (hasRealData) {
         // Small badge: Live ECG
-        ctx.fillStyle  = 'rgba(5, 150, 105, 0.85)';
-        ctx.fillRect(8, 8, 100, 22);
+        ctx.fillStyle  = 'rgba(5, 150, 105, 0.88)';
+        ctx.fillRect(8, 8, 120, 22);
         ctx.fillStyle  = '#ffffff';
         ctx.font       = 'bold 9px system-ui, sans-serif';
         ctx.textAlign  = 'left';
-        ctx.fillText('LIVE ECG  |  AD8232', 14, 22);
+        ctx.fillText('LIVE ECG | AD8232', 14, 22);
+      } else {
+        // Small badge: Demo ECG Signal (Simulation Mode)
+        ctx.fillStyle  = 'rgba(15, 23, 42, 0.85)';
+        ctx.fillRect(8, 8, 195, 22);
+        ctx.fillStyle  = '#fde68a';
+        ctx.font       = 'bold 9px system-ui, sans-serif';
+        ctx.textAlign  = 'left';
+        ctx.fillText('Demo ECG Signal  |  250 Hz P-QRS-T', 14, 22);
       }
 
       animationId = requestAnimationFrame(draw);
