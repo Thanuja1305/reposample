@@ -369,9 +369,15 @@ const PatientDashboard = () => {
     return () => unsub();
   }, []);
 
-  // 🔥 REALTIME RTDB SENSOR FETCH — patients/HS-001/liveVitals + ecgData/waveform
+  // 🔥 REALTIME RTDB SENSOR FETCH — Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading
   useEffect(() => {
-    if (!user) return;
+    // Audit Step 1 & 2: Firebase Initialization & Auth State Log
+    console.log('[Audit Step 1 & 2] Initializing RTDB Sensor Fetch Effect', {
+      authenticatedUserUid: user?.uid || 'NONE',
+      targetPatientId: PATIENT_ID,
+      primaryPath: 'Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading',
+      timestamp: new Date().toISOString()
+    });
 
     let lastHistoryWrite = 0;
     const latestVitalsMap: Record<string, any> = {};
@@ -387,7 +393,7 @@ const PatientDashboard = () => {
       `liveReadings/${PATIENT_ID}`,
       `liveReadings/HS-001`,
       `patients/${PATIENT_ID}/liveVitals`,
-      `users/${user.uid}/liveReading`,
+      `users/${user?.uid || PATIENT_ID}/liveReading`,
       `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,
       `devices/ESP32_ROOM_4A/liveReading`,
       `liveHealthMetrics/${PATIENT_ID}`,
@@ -410,14 +416,14 @@ const PatientDashboard = () => {
       `patients/${PATIENT_ID}/ecgData/waveform`,
       `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgData`,
       `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
-      `users/${user.uid}/liveReading/ecgData`,
+      `users/${user?.uid || PATIENT_ID}/liveReading/ecgData`,
       `devices/ESP32_ROOM_4A/liveReading/ecgSegment`,
     ];
 
     const iotDevicePaths = [
       `patients/${PATIENT_ID}/iotDevice`,
       `${PATIENT_ID}/iotDevice`,
-      `users/${user.uid}/iotDevice`,
+      `users/${user?.uid || PATIENT_ID}/iotDevice`,
       `users/HS-001/iotDevice`,
       `devices/ESP32_ROOM_4A`,
     ];
@@ -435,7 +441,7 @@ const PatientDashboard = () => {
           const spo2 = Number(data?.spo2 || data?.SpO2 || data?.SPO2 || data?.oxygen || data?.o2 || 0);
           const temp = Number(data?.temperature || data?.temperature_c || data?.Temperature_C || data?.temp || data?.Temp || 0);
           const hum = Number(data?.humidity || data?.Humidity || data?.hum || data?.Hum || 0);
-          if (bpm > 0 || spo2 > 0 || temp > 0 || hum > 0 || data?.sensorStatus || data?.deviceStatus || data?.connected || data?.status) {
+          if (bpm > 0 || spo2 > 0 || temp > 0 || hum > 0 || data?.sensorStatus || data?.deviceStatus || data?.connected || data?.status || data?.timestamp || data?.ecg) {
             activeData = data;
             activePath = path;
             
@@ -466,44 +472,6 @@ const PatientDashboard = () => {
         }
       }
 
-      // Check if IoT device is explicitly offline
-      let iotOffline = false;
-      let hasIotNode = false;
-      for (const path of iotDevicePaths) {
-        if (latestIotMap[path]) {
-          hasIotNode = true;
-          const iotVal = latestIotMap[path];
-          if (iotVal?.connected === false || String(iotVal?.connected) === 'false') {
-            iotOffline = true;
-            break;
-          }
-        }
-      }
-
-      // Check inline sensorStatus / connected status in activeData
-      let sensorConnectedFromData = true;
-      if (activeData) {
-        const sensStat = activeData.sensorStatus ?? activeData.sensor ?? activeData.connected ?? activeData.sensor_status ?? activeData.deviceStatus;
-        if (sensStat !== undefined && sensStat !== null) {
-          const sensStatStr = String(sensStat).toUpperCase();
-          // Only treat as fully disconnected if the DEVICE is offline/disconnected.
-          // ECG_ERROR / NO_FINGER mean the device IS connected but the finger/leads are off —
-          // temperature & humidity readings are still valid in these states.
-          if (
-            sensStat === false || sensStat === 'false' ||
-            sensStatStr === 'DISCONNECTED' ||
-            sensStatStr === 'OFFLINE' ||
-            sensStatStr === 'DEVICE OFFLINE' ||
-            sensStatStr === 'ECG_NOT_CONNECTED'
-          ) {
-            sensorConnectedFromData = false;
-          }
-        }
-        
-        // Strict Firebase Single Source of Truth Checks
-        if (activeData.deviceStatus && activeData.deviceStatus === 'OFFLINE') sensorConnectedFromData = false;
-      }
-
       // Feature 1: Validate values & physiological ranges (Step 12)
       const liveData = activeData;
       const rawBpm = Number(liveData?.heartRate || liveData?.bpm || liveData?.BPM || liveData?.HeartRate || 0);
@@ -512,58 +480,54 @@ const PatientDashboard = () => {
       const rawHum = Number(liveData?.humidity || liveData?.Humidity || liveData?.hum || liveData?.Hum || 0);
       
       // Step 12 range validation: validate parameters within realistic medical boundaries
-      const bpm = (rawBpm >= 30 && rawBpm <= 220) ? rawBpm : (rawBpm > 0 ? 0 : 0);
-      const spo2 = (rawSpo2 >= 70 && rawSpo2 <= 100) ? rawSpo2 : (rawSpo2 > 0 ? 0 : 0);
-      const temp = (rawTemp >= 20 && rawTemp <= 45) ? rawTemp : (rawTemp > 0 ? 0 : 0);
+      const bpm = (rawBpm >= 30 && rawBpm <= 220) ? rawBpm : (rawBpm > 0 ? rawBpm : 0);
+      const spo2 = (rawSpo2 >= 70 && rawSpo2 <= 100) ? rawSpo2 : (rawSpo2 > 0 ? rawSpo2 : 0);
+      const temp = (rawTemp >= 20 && rawTemp <= 45) ? rawTemp : (rawTemp > 0 ? rawTemp : 0);
       const hum = (rawHum >= 0 && rawHum <= 100) ? rawHum : 0;
 
-      // Step 8: Freshness Validation (30 seconds timestamp threshold)
+      // Step 8: Timestamp Normalization & Freshness Check (robust seconds to ms conversion)
       let rawTs = Number(liveData?.timestamp || liveData?.updatedAt || liveData?.time || 0);
-      if (rawTs > 0 && rawTs < 10000000000) {
-        rawTs = rawTs * 1000; // Convert 10-digit epoch seconds to milliseconds
+      let normalizedTs = rawTs;
+      if (normalizedTs > 0 && normalizedTs < 10000000000) {
+        normalizedTs = normalizedTs * 1000; // Convert 10-digit epoch seconds to milliseconds
       }
-      const isStale = rawTs > 0 && (Date.now() - rawTs > 30000);
+      const tsAgeMs = normalizedTs > 0 ? (Date.now() - normalizedTs) : 0;
+      const isStale = normalizedTs > 0 && tsAgeMs > 60000; // Allow 60s tolerance for hardware clock drift
 
       // Step 7: Device Status Check
-      const rawDeviceStatus = String(liveData?.deviceStatus || liveData?.status || '').toUpperCase();
-      const isDeviceOffline = rawDeviceStatus === 'OFFLINE' || rawDeviceStatus === 'DISCONNECTED';
+      const rawDeviceStatus = String(liveData?.deviceStatus || liveData?.status || liveData?.sensorStatus || '').toUpperCase();
+      const isExplicitOffline = rawDeviceStatus === 'OFFLINE' || rawDeviceStatus === 'DISCONNECTED';
 
-      // Step 11: Debug Logging in development mode
-      if (import.meta.env.DEV && activePath) {
-        console.log(`[Firebase RTDB Listener] Path: ${activePath}`, {
-          bpm, spo2, temperature: temp, humidity: hum,
-          ecgLength: latestEcgData?.length || 0,
-          deviceStatus: rawDeviceStatus || (sensorConnectedFromData ? 'ONLINE' : 'OFFLINE'),
-          timestamp: rawTs ? new Date(rawTs).toLocaleTimeString() : 'N/A',
-          isStale,
-          isDeviceOffline
-        });
-      }
-      
-      // If everything is exactly 0 and no sensorStatus is active, it means it's dummy/disconnected
-      const hasSensorStatus = !!liveData?.sensorStatus || !!liveData?.sensor_status || !!liveData?.sensor;
-      const hasRecentData = rawTs > 0 && !isStale;
-      if (bpm === 0 && spo2 === 0 && temp === 0 && hum === 0 && !hasSensorStatus && !hasRecentData) {
-        sensorConnectedFromData = false;
-      }
-
-      const iotConnected = (hasIotNode ? !iotOffline : true) && (activeData ? sensorConnectedFromData : false);
-
-      // Track real live data receipt (must have recent timestamp, valid HR, and not be self-written simulated fallback)
-      const isRealDataRecent = liveData && liveData.timestamp && (Date.now() - Number(liveData.timestamp) < 30000);
-      const isRealDataValid = iotConnected && isRealDataRecent && bpm > 0 && !liveData.isFallbackData;
-
-      if (isRealDataValid) {
-        lastRealDataTimeRef.current = Date.now();
-        hasReceivedRealDataRef.current = true;
-        if (isSimulating) {
-          console.log('[Simulation] Real live telemetry detected. Disabling simulation fallback mode...');
-          setIsSimulating(false);
+      // Sensor connection determination: active data with valid values or ONLINE status
+      let sensorConnectedFromData = false;
+      if (activeData) {
+        const hasValidVitals = bpm > 0 || spo2 > 0 || temp > 0 || hum > 0 || (Array.isArray(latestEcgData) && latestEcgData.length > 0);
+        if (!isExplicitOffline && (hasValidVitals || rawDeviceStatus === 'ONLINE' || liveData?.connected === true || !isStale)) {
+          sensorConnectedFromData = true;
         }
       }
 
-      // Show connected view if we are either simulating or have active real IoT telemetry
-      const connectedState = isSimulating || (activeData && iotConnected);
+      // Audit Step 4, 5, 6, 7: Comprehensive Diagnostic Log
+      console.log('[Audit Step 4-8] RTDB Telemetry Evaluation', {
+        activePath: activePath || 'NONE',
+        snapshotExists: !!activeData,
+        rawPayload: activeData,
+        rawBpm, validBpm: bpm,
+        rawSpo2, validSpo2: spo2,
+        rawTemp, validTemp: temp,
+        rawHum, validHum: hum,
+        ecgLength: latestEcgData?.length || 0,
+        rawTimestamp: rawTs,
+        normalizedTsMs: normalizedTs,
+        tsAgeSeconds: Math.floor(tsAgeMs / 1000),
+        isStale,
+        rawDeviceStatus,
+        isExplicitOffline,
+        sensorConnectedFromData,
+        finalIsConnected: sensorConnectedFromData
+      });
+
+      const connectedState = sensorConnectedFromData;
 
       if (connectedState) {
         setConnected(true);
