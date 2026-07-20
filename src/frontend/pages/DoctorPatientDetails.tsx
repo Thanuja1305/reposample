@@ -799,8 +799,31 @@ const DoctorPatientDetails = () => {
               <VitalRow label="Assigned Doctor" value={rtdbProfile?.assignedDoctor || rtdbProfile?.doctor || patient?.assignedDoctor || 'Dr. Alex Care'} />
             </div>
             <div className="space-y-3">
-              <VitalRow label="Emergency Contacts" value={rtdbProfile?.emergencyContacts || rtdbProfile?.contacts || 'Friend (+91 95025 36635)'} />
-              <VitalRow label="Medical Conditions" value={rtdbProfile?.medicalConditions || rtdbProfile?.conditions || 'Asthma / Cardiac Arrythmia'} />
+              <VitalRow 
+                label="Emergency Contacts" 
+                value={
+                  (() => {
+                    const contactsObj = rtdbProfile?.emergencyContacts || rtdbProfile?.contacts;
+                    if (!contactsObj) return 'Friend (+91 95025 36635)';
+                    if (typeof contactsObj === 'string') return contactsObj;
+                    if (typeof contactsObj === 'object' && contactsObj !== null) {
+                      const list: string[] = [];
+                      ['family', 'friend', 'guardian'].forEach((relation) => {
+                        const c = contactsObj[relation];
+                        if (c) {
+                          if (typeof c === 'string') list.push(`${relation}: ${c}`);
+                          else if (typeof c === 'object' && (c.name || c.phone)) {
+                            list.push(`${c.name || relation} (${c.phone || 'No phone'})`);
+                          }
+                        }
+                      });
+                      if (list.length > 0) return list.join(' | ');
+                    }
+                    return 'Friend (+91 95025 36635)';
+                  })()
+                } 
+              />
+              <VitalRow label="Medical Conditions" value={typeof rtdbProfile?.medicalConditions === 'string' ? rtdbProfile.medicalConditions : (rtdbProfile?.conditions || 'Asthma / Cardiac Arrythmia')} />
               <VitalRow label="Device Status" value={vitals?.deviceStatus || (vitals?.isSensorConnected !== false ? 'ONLINE' : 'OFFLINE')} />
             </div>
           </div>
@@ -860,11 +883,36 @@ const DoctorPatientDetails = () => {
   );
 };
 
-const VitalRow = ({ label, value, isCritical }: { label: string; value: string; isCritical?: boolean }) => (
+const safeRenderChild = (val: any): React.ReactNode => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+    return String(val);
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => typeof item === 'object' ? JSON.stringify(item) : String(item)).join(', ');
+  }
+  if (typeof val === 'object') {
+    const parts: string[] = [];
+    ['family', 'friend', 'guardian'].forEach((rel) => {
+      const c = val[rel];
+      if (c) {
+        if (typeof c === 'string') parts.push(`${rel}: ${c}`);
+        else if (typeof c === 'object' && (c.name || c.phone)) {
+          parts.push(`${c.name || rel} (${c.phone || ''})`);
+        }
+      }
+    });
+    if (parts.length > 0) return parts.join(' | ');
+    return JSON.stringify(val);
+  }
+  return String(val);
+};
+
+const VitalRow = ({ label, value, isCritical }: { label: string; value: any; isCritical?: boolean }) => (
   <div className="flex justify-between items-center py-2.5 border-b border-slate-100 text-sm font-semibold">
     <span className="text-slate-400">{label}</span>
     <span className={`font-bold ${isCritical ? 'text-red-600' : 'text-slate-800'}`}>
-      {value}
+      {safeRenderChild(value)}
     </span>
   </div>
 );
@@ -877,7 +925,7 @@ const DetailRow = ({ label, value, icon: Icon }: any) => (
         </div>
         <div>
            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</p>
-           <p className="text-sm font-bold text-slate-900 tracking-tight">{value}</p>
+           <p className="text-sm font-bold text-slate-900 tracking-tight">{safeRenderChild(value)}</p>
         </div>
      </div>
   </div>
