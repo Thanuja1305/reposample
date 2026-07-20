@@ -465,119 +465,112 @@ export default function EmergencyAlertModal() {
   const isFrozen = dispatchStatus === 'sending' || dispatchStatus === 'success';
 
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg bg-slate-900 border-2 border-red-500/30 rounded-[32px] overflow-hidden shadow-[0_30px_70px_rgba(239,68,68,0.25)] flex flex-col text-slate-100 animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-[500px] bg-slate-900 border-2 border-red-500/40 rounded-[28px] overflow-hidden shadow-[0_25px_60px_rgba(239,68,68,0.3)] flex flex-col text-slate-100">
         
-        {/* Header bar */}
-        <div className="bg-gradient-to-r from-red-600 to-red-500 px-6 py-4 flex items-center justify-between border-b border-red-500/20">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center animate-ping absolute" />
-            <div className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center relative">
-              <AlertOctagon className="w-5.5 h-5.5 text-white" />
+        {/* Compact Header Bar */}
+        <div className="bg-gradient-to-r from-red-600 via-red-500 to-rose-600 px-5 py-3.5 flex items-center justify-between border-b border-red-500/30 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center relative">
+              <AlertOctagon className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 bg-white/20 rounded-full animate-ping absolute inset-0" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-100/80">Critical Triage Warning</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-white">🚨 Critical Health Alert</span>
                 <span className="px-2 py-0.5 bg-black/40 text-amber-300 font-mono font-bold text-[10px] rounded-full border border-amber-400/30">
                   Auto-Check in {countdown}s
                 </span>
               </div>
-              <h2 className="text-base font-black tracking-tight leading-none text-white uppercase italic">HeartSync Emergency Alert</h2>
             </div>
           </div>
           <button 
             disabled={isFrozen}
             onClick={() => setIsMuted(!isMuted)}
-            className="p-2 hover:bg-white/10 rounded-xl transition-colors text-white disabled:opacity-50"
+            className="p-1.5 hover:bg-white/10 rounded-xl transition-colors text-white disabled:opacity-50"
             title={isMuted ? "Unmute Alarm" : "Mute Alarm"}
           >
-            {isMuted ? <VolumeX className="w-5.5 h-5.5" /> : <Volume2 className="w-5.5 h-5.5" />}
+            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
           </button>
         </div>
 
-        {/* Content body (scrollable) */}
-        <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[calc(85vh-130px)]">
+        {/* Compact Content Body */}
+        <div className="p-5 flex flex-col gap-3.5 overflow-y-auto max-h-[70vh]">
           
-          {/* Patient Details & Location Card */}
-          <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
-            <div className="flex justify-between text-xs font-bold text-slate-400">
-              <span>Patient: <strong className="text-white">{patientDetails.fullName}</strong></span>
-              <span>Age: <strong className="text-white">{patientDetails.age}</strong></span>
-              <span>Gender: <strong className="text-white">{patientDetails.gender}</strong></span>
+          {/* Patient Quick Info & Emergency Reason */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 flex flex-col gap-1">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="text-slate-400">Patient: <strong className="text-white">{patientDetails.fullName}</strong> ({patientDetails.age} yrs, {patientDetails.gender})</span>
+              <span className="text-red-400 uppercase text-[10px] font-black tracking-wider px-2 py-0.5 bg-red-950/60 rounded-md border border-red-500/30">HIGH RISK</span>
             </div>
-            <div className="text-xs font-bold text-slate-400 mt-1">
-              <span className="flex items-start gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
-                <span>Location: <strong className="text-slate-200">{patientDetails.locationAddress}</strong></span>
-              </span>
-            </div>
-          </div>
-
-          {/* AI Assessment summary card */}
-          <div className="bg-slate-950/50 border border-slate-800 rounded-2xl p-4">
-            <div className="flex items-center gap-1.5 text-amber-400 font-bold mb-1">
-              <Sparkles className="w-4 h-4" />
-              <span className="text-[10px] uppercase tracking-widest font-black">Clinical Decision Support AI</span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed italic">
-              {aiSummary || "Clinical biometrics show significant variations. Continuous live readings are under telemetry monitoring. Medical assessment is strongly advised."}
+            <p className="text-[11px] font-bold text-red-300 flex items-center gap-1.5 mt-0.5">
+              <ShieldAlert className="w-3.5 h-3.5 text-red-400 shrink-0" />
+              <span>Reason: Critical Biometric & Cardiac Triage Anomaly</span>
             </p>
           </div>
 
-          {/* Real-time parameters layout */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Essential Vitals Grid */}
+          <div className="grid grid-cols-3 gap-2.5">
             
             {/* Heart Rate */}
-            <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-3 text-center">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Heart Rate</span>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-2xl font-black text-red-400 tracking-tight">{vitals.heartRate}</span>
-                <span className="text-[10px] font-bold text-slate-500 uppercase">BPM</span>
+            <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-2.5 text-center">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Heart Rate</span>
+              <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
+                <span className="text-xl font-black text-red-400">{vitals.heartRate}</span>
+                <span className="text-[9px] font-bold text-slate-500 uppercase">BPM</span>
               </div>
             </div>
 
             {/* SpO2 */}
-            <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-3 text-center">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">SpO2</span>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-2xl font-black text-sky-400 tracking-tight">{vitals.spo2}</span>
-                <span className="text-[10px] font-bold text-slate-500">%</span>
+            <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-2.5 text-center">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">SpO2</span>
+              <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
+                <span className="text-xl font-black text-sky-400">{vitals.spo2}</span>
+                <span className="text-[9px] font-bold text-slate-500">%</span>
               </div>
             </div>
 
             {/* Temperature */}
-            <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-3 text-center">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Temperature</span>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-2xl font-black text-amber-400 tracking-tight">{vitals.temperature}</span>
-                <span className="text-[10px] font-bold text-slate-500">°C</span>
+            <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-2.5 text-center">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Temperature</span>
+              <div className="flex items-baseline justify-center gap-0.5 mt-0.5">
+                <span className="text-xl font-black text-amber-400">{vitals.temperature}</span>
+                <span className="text-[9px] font-bold text-slate-500">°C</span>
               </div>
             </div>
 
           </div>
 
-          {/* ECG Waveform Canvas Chart */}
-          <ECGCanvasChart data={vitals.ecgSegment} />
+          {/* AI Medical Summary (2-3 lines compact) */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+            <div className="flex items-center gap-1.5 text-amber-400 font-bold mb-1">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="text-[9px] uppercase tracking-widest font-black">AI Clinical Medical Summary</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-snug line-clamp-3 italic">
+              {aiSummary || "Clinical biometrics indicate acute vital instability. Persistent tachyarrhythmia or hypoxia risk detected. Immediate medical evaluation recommended."}
+            </p>
+          </div>
 
         </div>
 
-        {/* Fixed Action Footer Bar (always visible) */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center gap-3 shrink-0">
+        {/* Action Buttons Footer (Always Sticky & Visible) */}
+        <div className="p-3.5 bg-slate-950 border-t border-slate-800 flex items-center gap-2.5 shrink-0">
           
           <button
             type="button"
             disabled={isFrozen}
             onClick={handleIgnore}
-            className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 text-emerald-400 font-black uppercase text-[11px] tracking-widest rounded-xl transition-all border border-slate-700/60 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+            className="flex-1 py-2.5 px-3 bg-slate-800 hover:bg-slate-750 text-emerald-400 font-black uppercase text-[11px] tracking-wider rounded-xl transition-all border border-slate-700/60 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
           >
-            <span>🟢 Ignore Alert</span>
+            <span>🟢 Ignore</span>
           </button>
 
           <button
             type="button"
             disabled={isFrozen}
             onClick={() => handleDispatch(false)}
-            className="flex-1 py-3 px-4 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black uppercase text-[11px] tracking-widest rounded-xl shadow-[0_8px_20px_rgba(239,68,68,0.25)] transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 cursor-pointer"
+            className="flex-1 py-2.5 px-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black uppercase text-[11px] tracking-wider rounded-xl shadow-[0_6px_18px_rgba(239,68,68,0.3)] transition-all flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-60 cursor-pointer"
           >
             {dispatchStatus === 'sending' ? (
               <>
@@ -591,7 +584,7 @@ export default function EmergencyAlertModal() {
             ) : (
               <>
                 <ShieldAlert className="w-4 h-4" />
-                <span>🔴 EMERGENCY DISPATCH</span>
+                <span>🔴 Emergency Dispatch</span>
               </>
             )}
           </button>
