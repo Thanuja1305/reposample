@@ -32,8 +32,9 @@ import { ref, onValue, update, set } from 'firebase/database';
 import { db, rtdb } from '../../shared/lib/firebase';
 import DoctorSidebar from '../components/DoctorSidebar';
 import ECGGraph from '../components/patient/ECGGraph';
-import DoctorEmergencyModal from '../components/DoctorEmergencyModal';
 import { emergencyService } from '../../backend/services/emergencyService';
+
+const DoctorEmergencyModal = React.lazy(() => import('../components/DoctorEmergencyModal'));
 
 // Helper to resolve field name differences between IoT firmware versions
 const getHR = (v: any) => v?.bpm ?? v?.heartRate;
@@ -621,17 +622,19 @@ const DoctorDashboard = () => {
 
                 return (
                   <div className="space-y-6">
-                    <DoctorEmergencyModal
-                      activeEmergencyPatient={activeEmergencyPatient}
-                      isMuted={isMuted}
-                      onToggleMute={handleToggleMute}
-                      onClose={handleClosePopup}
-                      onIgnoreAlert={handleFalseAlert}
-                      onConfirmCritical={handleConfirmCritical}
-                      onViewPatient={handleViewPatient}
-                      onCallAmbulance={handleCallAmbulanceClick}
-                      isCallingAmbulance={isCallingAmbulance}
-                    />
+                    <React.Suspense fallback={null}>
+                      <DoctorEmergencyModal
+                        activeEmergencyPatient={activeEmergencyPatient}
+                        isMuted={isMuted}
+                        onToggleMute={handleToggleMute}
+                        onClose={handleClosePopup}
+                        onIgnoreAlert={handleFalseAlert}
+                        onConfirmCritical={handleConfirmCritical}
+                        onViewPatient={handleViewPatient}
+                        onCallAmbulance={handleCallAmbulanceClick}
+                        isCallingAmbulance={isCallingAmbulance}
+                      />
+                    </React.Suspense>
 
                     {primaryPatient && (
                       <div className="bg-white border border-slate-200/60 rounded-[32px] p-6 shadow-sm relative overflow-hidden cursor-pointer" onClick={() => { emergencyService.stopSiren(); navigate(`/doctor/report/${primaryPatient.patient.id}`); }}>

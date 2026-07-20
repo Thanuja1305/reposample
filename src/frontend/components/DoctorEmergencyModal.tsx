@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, Volume2, VolumeX, X, MapPin, Eye, Phone, AlertCircle, Heart, Activity, Thermometer, Droplets } from 'lucide-react';
-import ECGGraph from './patient/ECGGraph';
+
+const ECGGraph = React.lazy(() => import('./patient/ECGGraph'));
 
 interface DoctorEmergencyModalProps {
   activeEmergencyPatient: any;
@@ -188,13 +189,19 @@ const DoctorEmergencyModalComponent: React.FC<DoctorEmergencyModalProps> = ({
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" /> LIVE ECG WAVEFORM
               </div>
               <div className="pt-3 h-full w-[104%] -ml-[2%]">
-                <ECGGraph
-                  bpm={bpm}
-                  isEmergency={true}
-                  ecgData={ecgData}
-                  isSensorConnected={true}
-                  isCritical={true}
-                />
+                <React.Suspense fallback={
+                  <div className="h-full w-full flex items-center justify-center bg-slate-50 text-[9px] font-bold text-slate-400">
+                    Loading ECG Waveform...
+                  </div>
+                }>
+                  <ECGGraph
+                    bpm={bpm}
+                    isEmergency={true}
+                    ecgData={ecgData}
+                    isSensorConnected={true}
+                    isCritical={true}
+                  />
+                </React.Suspense>
               </div>
             </div>
 
