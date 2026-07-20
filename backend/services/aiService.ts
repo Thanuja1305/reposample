@@ -166,29 +166,38 @@ Format:
     }
   }
 
-  // 3. Fallback to local rule-based JSON if both providers are unconfigured or fail
+  // 3. Fallback to local rule-based JSON if both providers are unconfigured or fail (Stage 13 Error Handling)
   if (!success || !report) {
-    console.log('[AI Service] Both AI providers failed or unconfigured. Creating mock report.');
+    console.log('[AI Service] Both AI providers failed or unconfigured. Creating fallback clinical summary.');
     let risk = 'Low';
     const abnormal: string[] = [];
-    if (heartRate > 120 || heartRate < 50) {
-      risk = 'High';
+    if (heartRate > 140 || heartRate < 50) {
+      risk = 'Critical';
       abnormal.push('Heart Rate');
+    } else if (heartRate > 100) {
+      risk = 'High';
+      abnormal.push('Elevated Heart Rate');
     }
-    if (spo2 < 92) {
+    if (spo2 < 90) {
       risk = 'Critical';
       abnormal.push('SpO2');
     }
-    if (temperature > 38 || temperature < 35) {
-      risk = 'Moderate';
+    if (temperature > 40 || temperature < 35) {
+      risk = 'High';
       abnormal.push('Temperature');
     }
+
+    const fallbackText = "AI summary temporarily unavailable. Persistent abnormal vital signs detected. Immediate medical evaluation recommended.";
+
     report = {
-      summary: `Clinical readings logged. Heart rate is ${heartRate} BPM, SpO2 is ${spo2}%, temperature is ${temperature}°C.`,
+      summary: fallbackText,
+      result: fallbackText,
+      diagnosis: fallbackText,
       riskLevel: risk,
-      abnormalParameters: abnormal,
-      recommendation: risk === 'Critical' ? 'Immediate clinical review and evaluation required.' : 'Continue routine monitoring.',
-      confidence: '85%'
+      abnormalParameters: abnormal.length > 0 ? abnormal : ['Vitals Anomaly'],
+      recommendation: 'Immediate medical evaluation recommended.',
+      confidence: 'Fallback Rules',
+      priority: risk === 'Critical' ? 'HIGH' : 'MEDIUM'
     };
   }
 

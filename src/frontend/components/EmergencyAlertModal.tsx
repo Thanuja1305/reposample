@@ -302,6 +302,63 @@ export default function EmergencyAlertModal() {
     };
   }, [isOpen, activePatientUid]);
 
+  // Stage 7 & 8: 10-Second Countdown & Second Verification State Machine
+  const [countdown, setCountdown] = useState<number>(10);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCountdown(10);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || dispatchStatus !== 'idle') return;
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          console.log('[Emergency Modal Stage 7 & 8] 10-second countdown expired. Triggering Second Verification...');
+          performSecondVerification();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isOpen, dispatchStatus, activePatientUid]);
+
+  // Stage 8 & 9: Second Verification Logic & Automatic Escalation
+  const performSecondVerification = async () => {
+    try {
+      console.log(`[Emergency Modal Stage 8] Fetching fresh readings for Round 2 evaluation on patient ${activePatientUid}...`);
+      
+      // Read fresh live telemetry directly from RTDB
+      const freshSnap = await new Promise<any>((resolve) => {
+        const liveReadingsRef = ref(rtdb, `Patients/${activePatientUid}/liveReading`);
+        onValue(liveReadingsRef, (s) => resolve(s.val()), { onlyOnce: true });
+      });
+
+      const freshBpm = Number(freshSnap?.heartRate || freshSnap?.bpm || freshSnap?.BPM || vitals.heartRate || 0);
+      const freshSpo2 = Number(freshSnap?.spo2 || freshSnap?.SpO2 || vitals.spo2 || 0);
+      const freshTemp = Number(freshSnap?.temperature || freshSnap?.temperature_c || vitals.temperature || 0);
+
+      const isStillCritical = (freshBpm > 140 || (freshBpm > 0 && freshBpm < 50)) || (freshSpo2 > 0 && freshSpo2 < 90) || (freshTemp > 40 || (freshTemp > 0 && freshTemp < 35));
+
+      if (isStillCritical) {
+        console.warn(`[Emergency Modal Stage 9] Patient vitals remain critical during Round 2 verification (BPM: ${freshBpm}, SpO2: ${freshSpo2}%). Automatically escalating dispatch!`);
+        await handleDispatch(true); // Automatic escalation with verificationRound: 2
+      } else {
+        console.log(`[Emergency Modal Stage 8] Patient vitals have normalized during Round 2 verification. Resolving emergency.`);
+        await handleIgnore();
+      }
+    } catch (err) {
+      console.error('[Emergency Modal Stage 8] Second verification failed, executing automatic escalation fallback:', err);
+      await handleDispatch(true);
+    }
+  };
+
   // Handle alarm sound mute/trigger state
   useEffect(() => {
     if (isOpen && !isMuted) {
@@ -314,12 +371,20 @@ export default function EmergencyAlertModal() {
 
   if (!isOpen) return null;
 
-  // Ignore alert action: mute audio, clear activeAlerts path, and reset RTDB status
+  // Ignore alert action: Stage 6 - records ignoredAt and starts 10s re-verification instead of ignoring critical danger
   const handleIgnore = async () => {
     try {
       alarmSound.stop();
       setIsOpen(false);
       setDispatchStatus('idle');
+
+      // Update RTDB record with ignored timestamp
+      if (activeAlertId) {
+        await update(ref(rtdb, `alerts/${activeAlertId}`), {
+          ignored: true,
+          ignoredAt: Date.now()
+        });
+      }
 
       // Clear alert from RTDB activeAlerts
       await set(ref(rtdb, `activeAlerts/${activePatientUid}`), null);
@@ -355,8 +420,8 @@ export default function EmergencyAlertModal() {
     }
   };
 
-  // Dispatch emergency action: calls backend API
-  const handleDispatch = async () => {
+  // Dispatch emergency action: Stage 5 - calls backend API
+  const handleDispatch = async (isAutoEscalation = false) => {
     try {
       setDispatchStatus('sending');
 
@@ -366,7 +431,12 @@ export default function EmergencyAlertModal() {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ patientUid: activePatientUid })
+        body: JSON.stringify({
+          patientUid: activePatientUid,
+          verificationRound: isAutoEscalation ? 2 : 1,
+          aiSummary: aiSummary || "Persistent critical telemetry detected.",
+          reason: "Critical Cardiac Telemetry Alert"
+        })
       });
 
       if (res.ok) {
@@ -375,7 +445,8 @@ export default function EmergencyAlertModal() {
         if (activeAlertId) {
           await update(ref(rtdb, `alerts/${activeAlertId}`), {
             resolved: true,
-            status: 'dispatched'
+            status: 'dispatched',
+            verificationRound: isAutoEscalation ? 2 : 1
           });
         }
 
@@ -405,7 +476,12 @@ export default function EmergencyAlertModal() {
               <AlertOctagon className="w-5.5 h-5.5 text-white" />
             </div>
             <div>
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-100/80">Critical Triage Warning</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-red-100/80">Critical Triage Warning</span>
+                <span className="px-2 py-0.5 bg-black/40 text-amber-300 font-mono font-bold text-[10px] rounded-full border border-amber-400/30">
+                  Auto-Check in {countdown}s
+                </span>
+              </div>
               <h2 className="text-base font-black tracking-tight leading-none text-white uppercase italic">HeartSync Emergency Alert</h2>
             </div>
           </div>

@@ -284,6 +284,51 @@ Emergency services have been dispatched.`;
     // Set Cooldown lock timestamp upon successful dispatch
     cooldowns.set(patientUid, now);
 
+    // Stage 11: Sync structured emergency record to Firebase RTDB for Doctor Dashboard
+    if (rtdbAdmin) {
+      try {
+        const emergencyRecord = {
+          emergency: true,
+          status: 'DISPATCHED',
+          severity: 'HIGH',
+          reason: req.body.reason || 'Critical Vitals Anomaly',
+          aiSummary: req.body.aiSummary || `HeartSync Emergency Alert for ${patientName}. Heart Rate: ${heartRate} BPM, SpO2: ${spo2}%, Temp: ${temperature}°C.`,
+          doctorAlerted: true,
+          dispatchTriggered: true,
+          callPlaced: voiceCallSid !== 'mock_call_sid_67890',
+          ignored: false,
+          verificationRound: req.body.verificationRound || 1,
+          timestamp: now,
+          patientName,
+          age,
+          gender,
+          locationAddress: humanAddress,
+          mapsUrl,
+          latestVitals: {
+            bpm: heartRate,
+            spo2,
+            temperature
+          }
+        };
+
+        await rtdbAdmin.ref(`activeAlerts/${patientUid}`).set(emergencyRecord);
+        await rtdbAdmin.ref(`alerts/ALERT-${now}`).set({
+          ...emergencyRecord,
+          patientId: patientUid,
+          resolved: false
+        });
+        await rtdbAdmin.ref(`Patients/${patientUid}/liveReading`).update({
+          emergency: true,
+          emergencyStatus: 'DISPATCHED',
+          status: 'DISPATCHED',
+          deviceStatus: 'ONLINE'
+        });
+        console.log(`[Emergency Dispatch] Synced structured emergency record to Firebase RTDB for patient ${patientUid}.`);
+      } catch (rtdbSyncErr: any) {
+        console.warn('[Emergency Dispatch] RTDB emergency record sync failed:', rtdbSyncErr.message);
+      }
+    }
+
     // 7. Permanent Audit Trail Logging into PostgreSQL system_logs and alerts table
     try {
       const auditDetails = JSON.stringify({
