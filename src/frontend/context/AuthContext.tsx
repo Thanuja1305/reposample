@@ -413,6 +413,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         msg = "Network error during sync.";
       } else if (error.code === 'auth/popup-blocked') {
         msg = "Popup blocked by browser security.";
+      } else if (error.code === 'auth/unauthorized-domain') {
+        msg = "Unauthorized Domain: Please authorize 'heartsyncfinal.vercel.app' in Firebase Console -> Authentication -> Settings -> Authorized Domains.";
       } else {
         msg = error.message || "Google authentication failed.";
       }
