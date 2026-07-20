@@ -495,7 +495,8 @@ export default function EmergencyAlertModal() {
           </button>
         </div>
 
-        <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[80vh]">
+        {/* Content body (scrollable) */}
+        <div className="p-6 flex flex-col gap-4 overflow-y-auto max-h-[calc(85vh-130px)]">
           
           {/* Patient Details & Location Card */}
           <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2">
@@ -558,42 +559,42 @@ export default function EmergencyAlertModal() {
           {/* ECG Waveform Canvas Chart */}
           <ECGCanvasChart data={vitals.ecgSegment} />
 
-          {/* Overlay actions bar */}
-          <div className="flex items-center gap-3 mt-2 border-t border-slate-880/80 pt-4">
-            
-            <button
-              type="button"
-              disabled={isFrozen}
-              onClick={handleIgnore}
-              className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all border border-slate-700/60 active:scale-95 disabled:opacity-50 cursor-pointer"
-            >
-              Ignore Alert
-            </button>
+        </div>
 
-            <button
-              type="button"
-              disabled={isFrozen}
-              onClick={handleDispatch}
-              className="flex-1 py-3 px-4 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-[0_8px_20px_rgba(239,68,68,0.2)] transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 cursor-pointer"
-            >
-              {dispatchStatus === 'sending' ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Dispatching...</span>
-                </>
-              ) : dispatchStatus === 'success' ? (
-                <span>Dispatched!</span>
-              ) : dispatchStatus === 'failed' ? (
-                <span>Retry Dispatch</span>
-              ) : (
-                <>
-                  <ShieldAlert className="w-4 h-4" />
-                  <span>EMERGENCY DISPATCH</span>
-                </>
-              )}
-            </button>
+        {/* Fixed Action Footer Bar (always visible) */}
+        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center gap-3 shrink-0">
+          
+          <button
+            type="button"
+            disabled={isFrozen}
+            onClick={handleIgnore}
+            className="flex-1 py-3 px-4 bg-slate-800 hover:bg-slate-750 text-emerald-400 font-black uppercase text-[11px] tracking-widest rounded-xl transition-all border border-slate-700/60 active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            <span>🟢 Ignore Alert</span>
+          </button>
 
-          </div>
+          <button
+            type="button"
+            disabled={isFrozen}
+            onClick={() => handleDispatch(false)}
+            className="flex-1 py-3 px-4 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-black uppercase text-[11px] tracking-widest rounded-xl shadow-[0_8px_20px_rgba(239,68,68,0.25)] transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 cursor-pointer"
+          >
+            {dispatchStatus === 'sending' ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Dispatching...</span>
+              </>
+            ) : dispatchStatus === 'success' ? (
+              <span>Dispatched!</span>
+            ) : dispatchStatus === 'failed' ? (
+              <span>Retry Dispatch</span>
+            ) : (
+              <>
+                <ShieldAlert className="w-4 h-4" />
+                <span>🔴 EMERGENCY DISPATCH</span>
+              </>
+            )}
+          </button>
 
         </div>
 

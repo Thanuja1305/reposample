@@ -544,8 +544,8 @@ const PatientDashboard = () => {
         // ─── Real Medical Thresholds & Classification ─────────────────────────────────
         // BPM from ECG is invalid when leads are off — treat same as finger-off for BPM
         const isBpmInvalid = isFingerOff || isSearching || isError || isEcgLeadsOff;
-        const isBpmCritical = !isBpmInvalid && (bpm < 50 || bpm > 140);
-        const isBpmWarning  = !isBpmInvalid && (bpm >= 101 && bpm <= 140); // Elevated heart rate (101-140)
+        const isBpmCritical = !isBpmInvalid && bpm > 0 && (bpm < 50 || bpm > 140);
+        const isBpmWarning  = !isBpmInvalid && bpm > 0 && (bpm >= 101 && bpm <= 140); // Elevated heart rate (101-140)
         const isBpmNormal   = bpm >= 60 && bpm <= 100;
 
         // SpO2 / Temp / Humidity are still valid when ECG leads are off
@@ -568,12 +568,14 @@ const PatientDashboard = () => {
         const isEcgAbnormal = ecgStatus === 'Irregular rhythm';
 
         // ─── Emergency status logic ──────────────────────────────────
-        const emergencyVal = !isFingerOff && !isSearching && !isError && (liveData?.emergencyStatus === true || liveData?.emergency === true || String(liveData?.emergency) === 'true' || liveData?.isEmergency === true);
-        const isAbnormalVal = !isFingerOff && !isSearching && !isError && (liveData?.isAbnormal === true || String(liveData?.isAbnormal) === 'true');
+        // Do NOT trigger false emergencies when BPM = 0, SpO2 = 0, or device is standby/disconnected
+        const isStandbyOrDisconnected = bpm === 0 || spo2 === 0 || isFingerOff || isSearching || isError;
+        const emergencyVal = !isStandbyOrDisconnected && (liveData?.emergencyStatus === true || liveData?.emergency === true || String(liveData?.emergency) === 'true' || liveData?.isEmergency === true);
+        const isAbnormalVal = !isStandbyOrDisconnected && (liveData?.isAbnormal === true || String(liveData?.isAbnormal) === 'true');
 
-        // Trigger emergency if any vital is critical, or ECG is critical, or emergency is flagged
-        const emergency = !isFingerOff && !isSearching && !isError && (isBpmCritical || isSpo2Critical || isTempCritical || isHumCritical || isEcgCritical || emergencyVal);
-        const isAbnormal = !isFingerOff && !isSearching && !isError && (isBpmWarning || isSpo2Warning || isTempWarning || isHumWarning || isEcgAbnormal || isAbnormalVal || emergency);
+        // Trigger emergency ONLY if vitals are genuinely present and critical
+        const emergency = !isStandbyOrDisconnected && (isBpmCritical || isSpo2Critical || isTempCritical || isHumCritical || isEcgCritical || emergencyVal);
+        const isAbnormal = !isStandbyOrDisconnected && (isBpmWarning || isSpo2Warning || isTempWarning || isHumWarning || isEcgAbnormal || isAbnormalVal || emergency);
 
         // ─── AI ASSESSMENT NARRATIVE GENERATOR ─────────────────────
         const possibleConditions: string[] = [];
