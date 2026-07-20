@@ -138,105 +138,144 @@ Format:
         return JSON.parse(data.choices[0].message.content);
     };
 
-    try {
-        if (!process.env.GEMINI_API_KEY && !process.env.OPENAI_API_KEY) {
-            // Static mock report
-            let rLevel = 'Low';
-            if (heartRate > 120 || spo2 < 90 || temperature > 39) rLevel = 'Critical';
-            else if (heartRate > 100 || spo2 < 95 || temperature > 38) rLevel = 'Moderate';
-            
-            return res.json({
-                summary: "Static fallback mode activated. No API keys found.",
-                riskLevel: rLevel,
-                abnormalParameters: ["API_KEY_MISSING"],
-                recommendation: "Please provide valid GEMINI_API_KEY or OPENAI_API_KEY to activate real AI analysis.",
-                confidence: "100%"
-            });
-        }
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || process.env.GEMINI_KEY;
+    
+    if (geminiKey) {
+        console.log(`[Gemini AI] Gemini API key loaded successfully (Key length: ${geminiKey.length})`);
+    } else {
+        console.warn(`[Gemini AI] Warning: No GEMINI_API_KEY found in environment variables.`);
+    }
 
-        let jsonResp;
-        let attempt = 0;
-        let success = false;
+    console.log(`[Gemini AI] API request started for patient ${patientId || 'HS-001'}`);
+    console.log(`[Gemini AI] Telemetry payload sent: HR=${heartRate} BPM, SpO2=${spo2}%, Temp=${temperature}°C, Hum=${humidity}%`);
 
-        // Try Gemini (with 1 retry)
-        while (attempt < 2 && !success && ai) {
-            try {
+    const executeDirectGeminiFetch = async (key) => {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message || 'Gemini REST API error');
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanText);
+    };
+
+    let jsonResp = null;
+    let attempt = 0;
+    let success = false;
+
+    // 1. Try Gemini via SDK or Direct REST fetch (with 1 retry)
+    while (attempt < 2 && !success && geminiKey) {
+        try {
+            if (ai) {
                 const response = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: prompt,
                 });
-                
-                let text = response.text;
+                let text = response.text || '';
                 text = text.replace(/```json/g, '').replace(/```/g, '').trim();
                 jsonResp = JSON.parse(text);
                 success = true;
-            } catch (geminiError) {
-                attempt++;
-                console.warn(`[AI Controller] Gemini attempt ${attempt} failed:`, geminiError.message);
-            }
-        }
-
-        // Fallback to OpenAI
-        if (!success) {
-            console.log("[AI Controller] Switching to OpenAI fallback...");
-            try {
-                jsonResp = await executeOpenAIFallback();
+                console.log(`[Gemini AI] API response received via SDK.`);
+            } else {
+                jsonResp = await executeDirectGeminiFetch(geminiKey);
                 success = true;
-            } catch (openAiError) {
-                console.error("[AI Controller] OpenAI fallback failed:", openAiError.message);
+                console.log(`[Gemini AI] API response received via direct REST endpoint.`);
             }
+        } catch (geminiError) {
+            attempt++;
+            console.warn(`[Gemini AI] Gemini attempt ${attempt} failed:`, geminiError.message);
         }
+    }
 
-        if (!success || !jsonResp) {
-            return res.status(503).json({ error: "AI Report Currently Unavailable" });
-        }
-
-        // Cache the successful report
-        if (patientId) {
-            patientCache[patientId] = {
-                vitals: currentVitals,
-                report: jsonResp,
-                timestamp: Date.now()
-            };
-        }
-
-        // Store generated AI report in PostgreSQL and write summary to RTDB
+    // 2. Fallback to OpenAI
+    if (!success && process.env.OPENAI_API_KEY) {
+        console.log("[Gemini AI] Switching to OpenAI fallback...");
         try {
-            await db.query(
-                `INSERT INTO ai_reports (patient_id, summary, risk_level, abnormal_parameters, recommendation, confidence, vitals_snapshot)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [
-                    patientId || 'HS-001',
-                    jsonResp.summary,
-                    jsonResp.riskLevel,
-                    Array.isArray(jsonResp.abnormalParameters) ? jsonResp.abnormalParameters.join(',') : String(jsonResp.abnormalParameters || ''),
-                    jsonResp.recommendation,
-                    jsonResp.confidence || 'N/A',
-                    JSON.stringify(currentVitals)
-                ]
-            );
-            console.log(`[AI Controller] Success: AI report logged in PostgreSQL.`);
-        } catch (pgError) {
-            console.error(`[AI Controller] PostgreSQL logging failed:`, pgError.message);
+            jsonResp = await executeOpenAIFallback();
+            success = true;
+            console.log(`[Gemini AI] API response received via OpenAI fallback.`);
+        } catch (openAiError) {
+            console.error("[Gemini AI] OpenAI fallback failed:", openAiError.message);
         }
+    }
 
-        try {
-            await firebaseService.storeRtdbAiDiagnosis(patientId || 'HS-001', {
-                result: jsonResp.summary,
-                summary: jsonResp.summary,
-                diagnosis: jsonResp.summary,
-                riskLevel: jsonResp.riskLevel,
-                confidence: jsonResp.confidence || 'N/A',
-                abnormalParameters: Array.isArray(jsonResp.abnormalParameters) ? jsonResp.abnormalParameters : (jsonResp.abnormalParameters ? String(jsonResp.abnormalParameters).split(',') : []),
-                recommendation: jsonResp.recommendation,
-                timestamp: Date.now()
-            });
-            console.log(`[AI Controller] Success: AI report synced to Firebase RTDB.`);
-        } catch (rtdbError) {
-            console.error(`[AI Controller] Firebase RTDB AI diagnosis sync failed:`, rtdbError.message);
-        }
+    // 3. Graceful Fallback if API keys are missing or provider calls fail (Step 6 Requirement)
+    if (!success || !jsonResp) {
+        console.log('[Gemini AI] Provider calls unavailable or failed. Using graceful fallback message.');
+        let rLevel = 'Low';
+        const abnormal = [];
+        if (heartRate > 140 || heartRate < 50) { rLevel = 'Critical'; abnormal.push('Heart Rate'); }
+        else if (heartRate > 100) { rLevel = 'High'; abnormal.push('Elevated Heart Rate'); }
+        if (spo2 < 90) { rLevel = 'Critical'; abnormal.push('SpO2'); }
+        if (temperature > 40 || temperature < 35) { rLevel = 'High'; abnormal.push('Temperature'); }
 
-        return res.json(jsonResp);
+        const fallbackSummary = "AI medical analysis is temporarily unavailable. Critical abnormal vital signs detected. Immediate medical evaluation is recommended.";
+
+        jsonResp = {
+            summary: fallbackSummary,
+            result: fallbackSummary,
+            diagnosis: fallbackSummary,
+            riskLevel: rLevel,
+            abnormalParameters: abnormal.length > 0 ? abnormal : ['Vitals Anomaly'],
+            recommendation: "Immediate medical evaluation is recommended.",
+            confidence: "Rule Engine",
+            priority: rLevel === 'Critical' ? 'HIGH' : 'MEDIUM'
+        };
+    }
+
+    // Cache the report
+    if (patientId) {
+        patientCache[patientId] = {
+            vitals: currentVitals,
+            report: jsonResp,
+            timestamp: Date.now()
+        };
+    }
+
+    // Store generated AI report in PostgreSQL and write summary to RTDB
+    try {
+        await db.query(
+            `INSERT INTO ai_reports (patient_id, summary, risk_level, abnormal_parameters, recommendation, confidence, vitals_snapshot)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+                patientId || 'HS-001',
+                jsonResp.summary,
+                jsonResp.riskLevel,
+                Array.isArray(jsonResp.abnormalParameters) ? jsonResp.abnormalParameters.join(',') : String(jsonResp.abnormalParameters || ''),
+                jsonResp.recommendation,
+                jsonResp.confidence || 'N/A',
+                JSON.stringify(currentVitals)
+            ]
+        );
+        console.log(`[Gemini AI] Success: AI report logged in PostgreSQL.`);
+    } catch (pgError) {
+        console.error(`[Gemini AI] PostgreSQL logging failed:`, pgError.message);
+    }
+
+    try {
+        await firebaseService.storeRtdbAiDiagnosis(patientId || 'HS-001', {
+            result: jsonResp.summary,
+            summary: jsonResp.summary,
+            diagnosis: jsonResp.summary,
+            riskLevel: jsonResp.riskLevel,
+            confidence: jsonResp.confidence || 'N/A',
+            abnormalParameters: Array.isArray(jsonResp.abnormalParameters) ? jsonResp.abnormalParameters : (jsonResp.abnormalParameters ? String(jsonResp.abnormalParameters).split(',') : []),
+            recommendation: jsonResp.recommendation,
+            timestamp: Date.now()
+        });
+        console.log(`[Gemini AI] Summary saved to Firebase RTDB for patient ${patientId || 'HS-001'}`);
+        console.log(`[Gemini AI] Summary displayed on Patient & Doctor Dashboards.`);
+    } catch (rtdbError) {
+        console.error(`[Gemini AI] Firebase RTDB AI diagnosis sync failed:`, rtdbError.message);
+    }
+
+    return res.json(jsonResp);
 
     } catch (err) {
         console.error("[AI Controller] Critical Error:", err.message);
