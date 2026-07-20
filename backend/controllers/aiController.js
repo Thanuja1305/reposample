@@ -138,6 +138,7 @@ Format:
         return JSON.parse(data.choices[0].message.content);
     };
 
+    try {
     const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GOOGLE_AI_KEY || process.env.GEMINI_KEY;
     
     if (geminiKey) {
