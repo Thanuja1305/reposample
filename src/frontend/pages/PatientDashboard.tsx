@@ -379,30 +379,28 @@ const PatientDashboard = () => {
     let latestEcgData: number[] = [];
 
     const vitalsPaths = [
-      // ── Primary paths written by the backend telemetry service ──────────────
-      `Patients/HS-001/liveReading`,                           // Backend Path E (Arduino patientUid="HS-001")
-      `Patients/${PATIENT_ID}/liveReading`,                    // Backend Path E (logged-in UID)
-      `Patients/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
-      `liveReadings/HS-001`,                                   // Backend Path B (Arduino patientUid="HS-001")
-      `liveReadings/${PATIENT_ID}`,                            // Backend Path B (logged-in UID)
-      `patients/HS-001/liveVitals`,                            // Backend Path D (Arduino patientUid="HS-001")
-      `patients/${PATIENT_ID}/liveVitals`,                     // Backend Path D (logged-in UID)
-      `users/HS-001/liveReading`,                              // Backend Path C (Arduino patientUid="HS-001")
-      `users/${user.uid}/liveReading`,                         // Backend Path C (logged-in UID)
-      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,        // Explicit Arduino Test ID
-      `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
-      `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading`,
-      // ── Device-level liveReading (Backend Path A — devices/{deviceId}) ───────
+      // ── Exact Primary Hardware Target Path ───────────────────────────────────
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,
+      `Patients/${PATIENT_ID}/liveReading`,
+      `Patients/HS-001/liveReading`,
+      `liveReadings/VZRKMomlf4V2NVG0XXCdCSCsjwn2`,
+      `liveReadings/${PATIENT_ID}`,
+      `liveReadings/HS-001`,
+      `patients/${PATIENT_ID}/liveVitals`,
+      `users/${user.uid}/liveReading`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,
       `devices/ESP32_ROOM_4A/liveReading`,
-      // ── Legacy / fallback paths ──────────────────────────────────────────────
       `liveHealthMetrics/${PATIENT_ID}`,
       `liveHealthMetrics/HS-001`,
     ];
 
     const ecgPaths = [
-      `Patients/HS-001/liveReading/ecgSegment`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgSegment`,
+      `Patients/${PATIENT_ID}/liveReading/ecg`,
       `Patients/${PATIENT_ID}/liveReading/ecgSegment`,
-      `Patients/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecgSegment`,
+      `Patients/HS-001/liveReading/ecgSegment`,
+      `liveReadings/VZRKMomlf4V2NVG0XXCdCSCsjwn2/ecg`,
       `liveReadings/HS-001/ecgSegment`,
       `liveReadings/HS-001/latestEcgSegment`,
       `liveReadings/${PATIENT_ID}/ecgSegment`,
@@ -410,24 +408,9 @@ const PatientDashboard = () => {
       `patients/HS-001/liveVitals/ecgData`,
       `patients/${PATIENT_ID}/ecgValues`,
       `patients/${PATIENT_ID}/ecgData/waveform`,
-      `liveHealthMetrics/${PATIENT_ID}/ecgValues`,
-      `liveHealthMetrics/${PATIENT_ID}/ecgData`,
-      `liveHealthMetrics/HS-001/ecgValues`,
-      `liveHealthMetrics/HS-001/ecgData`,
-      `liveHealthMetrics/HS-001/ecg`,
-      `users/HS-001/liveReading/ecgData`,
-      `users/HS-001/liveReading/ecgValues`,
-      `users/HS-001/liveReading/ecg`,
-      `users/${user.uid}/liveReading/ecgValues`,
-      `users/${user.uid}/liveReading/ecg`,
-      `users/${user.uid}/liveReading/ecgData`,
-      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgValues`,
-      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
       `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgData`,
-      `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecgValues`,
-      `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecg`,
-      `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading/ecgValues`,
-      `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading/ecg`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
+      `users/${user.uid}/liveReading/ecgData`,
       `devices/ESP32_ROOM_4A/liveReading/ecgSegment`,
     ];
 
@@ -521,17 +504,45 @@ const PatientDashboard = () => {
         if (activeData.deviceStatus && activeData.deviceStatus === 'OFFLINE') sensorConnectedFromData = false;
       }
 
-      // Feature 1: Validate values
+      // Feature 1: Validate values & physiological ranges (Step 12)
       const liveData = activeData;
-      const bpm = Number(liveData?.heartRate || liveData?.bpm || liveData?.BPM || liveData?.HeartRate || 0);
-      const spo2 = Number(liveData?.spo2 || liveData?.SpO2 || liveData?.SPO2 || liveData?.oxygen || liveData?.o2 || 0);
-      const temp = Number(liveData?.temperature || liveData?.temperature_c || liveData?.Temperature_C || liveData?.temp || liveData?.Temp || 0);
-      const hum = Number(liveData?.humidity || liveData?.Humidity || liveData?.hum || liveData?.Hum || 0);
+      const rawBpm = Number(liveData?.heartRate || liveData?.bpm || liveData?.BPM || liveData?.HeartRate || 0);
+      const rawSpo2 = Number(liveData?.spo2 || liveData?.SpO2 || liveData?.SPO2 || liveData?.oxygen || liveData?.o2 || 0);
+      const rawTemp = Number(liveData?.temperature || liveData?.temperature_c || liveData?.Temperature_C || liveData?.temp || liveData?.Temp || 0);
+      const rawHum = Number(liveData?.humidity || liveData?.Humidity || liveData?.hum || liveData?.Hum || 0);
+      
+      // Step 12 range validation: validate parameters within realistic medical boundaries
+      const bpm = (rawBpm >= 30 && rawBpm <= 220) ? rawBpm : (rawBpm > 0 ? 0 : 0);
+      const spo2 = (rawSpo2 >= 70 && rawSpo2 <= 100) ? rawSpo2 : (rawSpo2 > 0 ? 0 : 0);
+      const temp = (rawTemp >= 20 && rawTemp <= 45) ? rawTemp : (rawTemp > 0 ? 0 : 0);
+      const hum = (rawHum >= 0 && rawHum <= 100) ? rawHum : 0;
+
+      // Step 8: Freshness Validation (30 seconds timestamp threshold)
+      let rawTs = Number(liveData?.timestamp || liveData?.updatedAt || liveData?.time || 0);
+      if (rawTs > 0 && rawTs < 10000000000) {
+        rawTs = rawTs * 1000; // Convert 10-digit epoch seconds to milliseconds
+      }
+      const isStale = rawTs > 0 && (Date.now() - rawTs > 30000);
+
+      // Step 7: Device Status Check
+      const rawDeviceStatus = String(liveData?.deviceStatus || liveData?.status || '').toUpperCase();
+      const isDeviceOffline = rawDeviceStatus === 'OFFLINE' || rawDeviceStatus === 'DISCONNECTED';
+
+      // Step 11: Debug Logging in development mode
+      if (import.meta.env.DEV && activePath) {
+        console.log(`[Firebase RTDB Listener] Path: ${activePath}`, {
+          bpm, spo2, temperature: temp, humidity: hum,
+          ecgLength: latestEcgData?.length || 0,
+          deviceStatus: rawDeviceStatus || (sensorConnectedFromData ? 'ONLINE' : 'OFFLINE'),
+          timestamp: rawTs ? new Date(rawTs).toLocaleTimeString() : 'N/A',
+          isStale,
+          isDeviceOffline
+        });
+      }
       
       // If everything is exactly 0 and no sensorStatus is active, it means it's dummy/disconnected
       const hasSensorStatus = !!liveData?.sensorStatus || !!liveData?.sensor_status || !!liveData?.sensor;
-      // Device is connected if: we have a sensorStatus field OR any vital is non-zero OR there is a recent timestamp
-      const hasRecentData = liveData?.timestamp && (Date.now() - Number(liveData.timestamp) < 120000); // within 2 min
+      const hasRecentData = rawTs > 0 && !isStale;
       if (bpm === 0 && spo2 === 0 && temp === 0 && hum === 0 && !hasSensorStatus && !hasRecentData) {
         sensorConnectedFromData = false;
       }
@@ -912,107 +923,6 @@ const PatientDashboard = () => {
       unsubs.forEach((unsub) => unsub());
     };
   }, [user, isSimulating]);
-
-  // ─── Simulation / Fallback State Machine ──────────────────────────────────
-  useEffect(() => {
-    if (!user) return;
-
-    // A. Mount Timer: If no real data after 120s, activate simulation fallback
-    const mountTimeout = setTimeout(() => {
-      if (!hasReceivedRealDataRef.current && !isSimulating) {
-        console.log('[Simulation] Initial 120s delay completed with no real data. Starting simulation fallback...');
-        setIsSimulating(true);
-        setLoading(false);
-      }
-    }, 120000);
-
-    // B. Real-time Connection Timeout Checker: Runs every 2 seconds
-    const checkerInterval = setInterval(() => {
-      const now = Date.now();
-      
-      // If we are currently in LIVE mode, but haven't received updates for 40 seconds, switch to simulation
-      if (hasReceivedRealDataRef.current && !isSimulating && lastRealDataTimeRef.current > 0) {
-        if (now - lastRealDataTimeRef.current > 40000) {
-          console.warn('[Simulation] Real-time sensor timeout (40 seconds). Switching to simulation fallback...');
-          setIsSimulating(true);
-        }
-      }
-    }, 2000);
-
-    return () => {
-      clearTimeout(mountTimeout);
-      clearInterval(checkerInterval);
-    };
-  }, [user, isSimulating]);
-
-  // C. Simulation Vitals Generator (updates every 4 seconds when active)
-  useEffect(() => {
-    if (!isSimulating || !user) return;
-
-    const generateSimulatedData = async () => {
-      const now = Date.now();
-      // Generate realistic oscillating critical readings:
-      // Heart Rate: 120-150 BPM
-      const simulatedBpm = Math.floor(120 + Math.random() * 30);
-      // SpO2: 85-92%
-      const simulatedSpo2 = Math.floor(85 + Math.random() * 8);
-      // Temperature: 38.0 - 39.5 C
-      const simulatedTemp = Number((38.0 + Math.random() * 1.5).toFixed(1));
-      // Humidity: 40-50%
-      const simulatedHum = Math.floor(40 + Math.random() * 11);
-
-      const simPayload = {
-        bpm: simulatedBpm,
-        heartRate: simulatedBpm,
-        spo2: simulatedSpo2,
-        temperature: simulatedTemp,
-        temperature_c: simulatedTemp,
-        humidity: simulatedHum,
-        ecgData: PHYSIONET_SAMPLES,
-        ecgSegment: PHYSIONET_SAMPLES,
-        latestEcgSegment: PHYSIONET_SAMPLES,
-        sensorStatus: 'nominal',
-        deviceStatus: 'ONLINE',
-        emergency: true,
-        isAbnormal: true,
-        condition: 'Critical',
-        timestamp: now,
-        isFallbackData: true,
-        ecgSource: 'PHYSIONET_DEMO',
-        ecgQuality: 'GOOD',
-        patientName: rtdbProfile?.fullName || rtdbProfile?.name || 'Patient',
-        patientAge: rtdbProfile?.age || '',
-        patientEmail: rtdbProfile?.email || user?.email || '',
-        serialNumber: PATIENT_ID
-      };
-
-      console.log('[Simulation] Writing critical vitals to Firebase:', {
-        bpm: simulatedBpm,
-        spo2: simulatedSpo2,
-        temp: simulatedTemp
-      });
-
-      try {
-        const pathsToUpdate = [
-          `liveReadings/${PATIENT_ID}`,
-          `users/${PATIENT_ID}/liveReading`,
-          `patients/${PATIENT_ID}/liveVitals`
-        ];
-
-        for (const p of pathsToUpdate) {
-          await update(ref(rtdb, p), simPayload);
-        }
-      } catch (err) {
-        console.warn('[Simulation] Failed to write simulated payload to Firebase:', err);
-      }
-    };
-
-    // Trigger immediately on simulation activation and then loop
-    generateSimulatedData();
-    const simInterval = setInterval(generateSimulatedData, 4000);
-
-    return () => clearInterval(simInterval);
-  }, [isSimulating, user, rtdbProfile]);
 
 
 

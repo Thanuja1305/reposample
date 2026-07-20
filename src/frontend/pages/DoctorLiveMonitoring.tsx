@@ -163,24 +163,27 @@ const DoctorLiveMonitoring = () => {
     const activeId = derivedActiveId;
 
     const vitalsPaths = [
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,
+      `Patients/${activeId}/liveReading`,
       `patients/${activeId}/liveVitals`,
       `liveHealthMetrics/${activeId}`,
       `liveHealthMetrics/HS-001`,
       `users/${activeId}/liveReading`,
-      `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading`,
-      `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading`,
       `users/HS-001/liveReading`
     ];
 
     const ecgPaths = [
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
+      `Patients/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecgSegment`,
+      `Patients/${activeId}/liveReading/ecg`,
+      `Patients/${activeId}/liveReading/ecgSegment`,
       `patients/${activeId}/ecgData/waveform`,
       `patients/${activeId}/ecgData`,
       `liveHealthMetrics/${activeId}/ecgData`,
       `liveHealthMetrics/HS-001/ecgData`,
-      `liveHealthMetrics/HS-001/ecg`,
       `users/${activeId}/liveReading/ecg`,
-      `users/m1uph2bX7SVd9Wbyge1AMqAmq093/liveReading/ecg`,
-      `users/onYK6WJGu6VR6fEgQXBhximLEFI3/liveReading/ecg`,
+      `users/VZRKMomlf4V2NVG0XXCdCSCsjwn2/liveReading/ecg`,
       `users/HS-001/liveReading/ecg`
     ];
 

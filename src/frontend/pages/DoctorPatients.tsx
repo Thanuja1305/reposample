@@ -78,9 +78,19 @@ const DoctorPatients = () => {
     // Real-time listener for all patient vitals
     const liveReadingsRef = ref(rtdb, 'liveReadings');
     const unsubVitals = onValue(liveReadingsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const readings = snapshot.val();
-        
+      const readings = snapshot.exists() ? snapshot.val() : {};
+      
+      // Merge Patients path (capital P) for direct hardware alignment
+      const patientsCapRef = ref(rtdb, 'Patients');
+      onValue(patientsCapRef, (capSnap) => {
+        const capData = capSnap.exists() ? capSnap.val() : {};
+        const capMerged: Record<string, any> = {};
+        for (const [pid, pData] of Object.entries(capData)) {
+          if (pData && (pData as any).liveReading) {
+            capMerged[pid] = (pData as any).liveReading;
+          }
+        }
+
         // Also listen and merge legacy paths for compatibility
         const legacyRef = ref(rtdb, 'patients');
         onValue(legacyRef, (legSnap) => {
@@ -91,11 +101,9 @@ const DoctorPatients = () => {
               merged[pid] = (pData as any).liveVitals;
             }
           }
-          setVitalsMap({ ...merged, ...readings });
+          setVitalsMap({ ...merged, ...capMerged, ...readings });
         }, { onlyOnce: true });
-      } else {
-        setVitalsMap({});
-      }
+      }, { onlyOnce: true });
     });
 
     return () => {
