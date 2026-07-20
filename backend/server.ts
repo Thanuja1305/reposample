@@ -99,7 +99,7 @@ initializeSchemas();
 // Start the Heartbeat status monitoring checker (runs every 5 seconds)
 startHeartbeatMonitor();
 
-// Start the Express server
-app.listen(PORT, () => {
-  console.log(`🚀 HeartSync Backend Server is running on port ${PORT}`);
+// Start the Express server (bound to 0.0.0.0 for Render / Railway port scanner)
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`🚀 HeartSync Backend Server is running on port ${PORT} (host: 0.0.0.0)`);
 });

@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "backend": "nodemon --exec tsx backend/server.ts",
+    "backend": "tsx backend/server.ts",
+    "backend:dev": "nodemon --exec tsx backend/server.ts",
     "start": "tsx backend/server.ts",
+    "start:backend": "tsx backend/server.ts",
     "build": "vite build",
     "vercel-build": "vite build",
     "preview": "vite preview",
@@ -38,6 +40,7 @@
     "react-router-dom": "^7.15.0",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
+    "tsx": "^4.21.0",
     "twilio": "^6.0.2",
     "vite": "^6.2.3",
     "ws": "^8.21.1",
@@ -52,7 +55,6 @@
     "nodemon": "^3.1.14",
     "tailwindcss": "^4.1.14",
     "ts-node": "^10.9.2",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
   }
