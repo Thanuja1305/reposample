@@ -387,6 +387,7 @@ Output JSON format:
 
     if (geminiKey) {
       try {
+        console.log(`[Report API] Primary provider (Gemini) generating report summary...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
         const response = await fetch(url, {
           method: 'POST',
@@ -394,12 +395,47 @@ Output JSON format:
           body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
         });
         const data = await response.json();
+        if (data.error) throw new Error(data.error.message || 'Gemini error');
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const parsed = JSON.parse(clean);
         aiSummaryText = parsed.summary || text;
+        console.log(`[Report API] Gemini report summary generated successfully.`);
       } catch (geminiErr) {
-        console.warn(`[Report API] Gemini API call warning: ${geminiErr.message}`);
+        console.warn(`[Report API] Gemini API call failed (${geminiErr.message}). Switching to OpenAI spare provider...`);
+      }
+    }
+
+    if (!aiSummaryText && process.env.OPENAI_API_KEY) {
+      try {
+        console.log(`[Report API] Spare provider (OpenAI) generating report summary...`);
+        const openAiResp = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              { role: "system", content: "You are a Senior Cardiologist. Output concise clinical analysis." },
+              { role: "user", content: prompt }
+            ]
+          })
+        });
+        const openAiData = await openAiResp.json();
+        if (openAiData.error) throw new Error(openAiData.error.message);
+        const text = openAiData.choices?.[0]?.message?.content || '';
+        const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        try {
+          const parsed = JSON.parse(clean);
+          aiSummaryText = parsed.summary || text;
+        } catch {
+          aiSummaryText = text;
+        }
+        console.log(`[Report API] OpenAI spare report summary generated successfully.`);
+      } catch (openAiErr) {
+        console.error(`[Report API] OpenAI spare provider failed: ${openAiErr.message}`);
       }
     }
 
