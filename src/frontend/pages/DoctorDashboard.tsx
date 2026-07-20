@@ -32,6 +32,7 @@ import { ref, onValue, update, set } from 'firebase/database';
 import { db, rtdb } from '../../shared/lib/firebase';
 import DoctorSidebar from '../components/DoctorSidebar';
 import ECGGraph from '../components/patient/ECGGraph';
+import DoctorEmergencyModal from '../components/DoctorEmergencyModal';
 import { emergencyService } from '../../backend/services/emergencyService';
 
 // Helper to resolve field name differences between IoT firmware versions
@@ -494,6 +495,16 @@ const DoctorDashboard = () => {
     }
   }, [activeEmergencyPatient, isMuted]);
 
+  const handleToggleMute = React.useCallback(() => {
+    setIsMuted(prev => !prev);
+  }, []);
+
+  const handleViewPatient = React.useCallback((targetPatientId: string) => {
+    emergencyService.stopSiren();
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    navigate(`/doctor/report/${targetPatientId}`);
+  }, [navigate]);
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex overflow-hidden font-sans text-slate-800">
       <title>Clinical Registry | HeartSync</title>
@@ -610,132 +621,17 @@ const DoctorDashboard = () => {
 
                 return (
                   <div className="space-y-6">
-                    <AnimatePresence>
-                      {activeEmergencyPatient && (
-                        <motion.div 
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 lg:p-8"
-                        >
-                          <motion.div 
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0.9, y: 20 }}
-                            className="bg-white rounded-[32px] shadow-2xl w-full max-w-[420px] overflow-hidden flex flex-col max-h-[90vh]"
-                          >
-                            <div className="bg-[#8B0000] p-6 pt-8 pb-10 relative shrink-0">
-                              <div className="absolute top-4 right-4 flex items-center gap-2 z-50">
-                                <button onClick={() => setIsMuted(!isMuted)} className="text-white bg-black/20 hover:bg-white/20 transition-colors p-2 rounded-full shadow-lg cursor-pointer">
-                                  {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                                </button>
-                                <button onClick={handleClosePopup} className="text-white bg-black/20 hover:bg-red-900 transition-colors p-2 rounded-full shadow-lg cursor-pointer">
-                                  <X className="w-5 h-5" />
-                                </button>
-                              </div>
-                              <div className="flex items-start gap-4 relative z-0">
-                                <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center text-white shrink-0">
-                                  <ShieldAlert className="w-6 h-6" />
-                                </div>
-                                <div>
-                                  <p className="text-[9px] font-bold text-white/70 uppercase tracking-[0.2em] mb-1">HEARTSYNC MEDICAL ALERT</p>
-                                  <h2 className="text-white font-bold text-lg tracking-tight">🚨 CRITICAL PATIENT DETECTED</h2>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="p-6 pt-8 -mt-6 bg-white rounded-t-[24px] overflow-y-auto flex-1 relative flex flex-col gap-5">
-                              <p className="text-xs font-medium text-slate-600 leading-relaxed">
-                                All critical thresholds breached — Heart Rate, SpO2, Temperature, and Humidity are at dangerous levels. Immediate life-saving intervention required.
-                              </p>
-                              
-                              <div className="grid grid-cols-2 gap-3">
-                                {/* Heart Rate */}
-                                <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex flex-col justify-center">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">HEART RATE</span>
-                                  <p className="text-2xl font-black text-[#8B0000] mb-1">{activeEmergencyPatient.vitals?.bpm || '--'} <span className="text-sm">BPM</span></p>
-                                  <span className="text-[9px] font-bold text-[#8B0000] uppercase tracking-widest">▲ CRITICAL</span>
-                                </div>
-                                
-                                {/* Blood Oxygen */}
-                                <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex flex-col justify-center">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">BLOOD OXYGEN</span>
-                                  <p className="text-2xl font-black text-[#8B0000] mb-1">{activeEmergencyPatient.vitals?.spo2 || '--'} <span className="text-sm">%</span></p>
-                                  <span className="text-[9px] font-bold text-[#8B0000] uppercase tracking-widest">▲ CRITICAL</span>
-                                </div>
-                                
-                                {/* Temperature */}
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col justify-center">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">TEMPERATURE</span>
-                                  <p className="text-xl font-black text-slate-900">{activeEmergencyPatient.vitals?.temperature_c || '0.0'} <span className="text-sm">°C</span></p>
-                                </div>
-                                
-                                {/* Humidity */}
-                                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col justify-center">
-                                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">HUMIDITY</span>
-                                  <p className="text-xl font-black text-slate-900">{activeEmergencyPatient.vitals?.humidity || '0'} <span className="text-sm">%</span></p>
-                                </div>
-                              </div>
-                              
-                              {/* Live Waveform */}
-                              <div className="border border-slate-200 rounded-2xl overflow-hidden h-[100px] relative">
-                                <div className="absolute top-0 left-0 z-10 bg-slate-500 text-white text-[8px] font-bold px-2 py-1 rounded-br-xl">
-                                  LIVE WAVEFORM
-                                </div>
-                                <div className="pt-4 h-full w-[105%] -ml-[2.5%]">
-                                  <ECGGraph 
-                                    bpm={Number(activeEmergencyPatient.vitals?.bpm) || 0} 
-                                    isEmergency={true} 
-                                    ecgData={Array.isArray(activeEmergencyPatient.vitals?.ecg) ? activeEmergencyPatient.vitals.ecg : []} 
-                                    isSensorConnected={true} 
-                                    isCritical={true}
-                                  />
-                                </div>
-                              </div>
-                              
-                              {/* AI Report */}
-                              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">AI DIAGNOSTIC REPORT</p>
-                                <h3 className="text-sm font-bold text-slate-900 mb-1">Critical Heart Rate</h3>
-                                <p className="text-[11px] text-slate-500 font-medium">
-                                  {activeEmergencyPatient.vitals?.aiDiagnosis?.result || `Severe bradycardia — ${activeEmergencyPatient.vitals?.bpm || '0'} BPM detected. Possible cardiac arrest risk.`}
-                                </p>
-                              </div>
-                              
-                              {/* Live Location */}
-                              <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-[#8B0000] shrink-0">
-                                    <MapPin className="w-4 h-4" />
-                                  </div>
-                                  <div>
-                                    <p className="text-xs font-bold text-slate-900">Live Location Acquired</p>
-                                    <p className="text-[9px] font-medium text-slate-500">Ready for ambulance dispatch routing</p>
-                                  </div>
-                                </div>
-                                <div className="bg-[#8B0000] text-white text-[8px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                                  LOCKED
-                                </div>
-                              </div>
-                              
-                              {/* Footer Info */}
-                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest text-center mt-2">
-                                PATIENT: {activeEmergencyPatient.patient?.fullName?.split(' ')[0] || 'UNKNOWN'} | AGE: {activeEmergencyPatient.patient?.profile?.age || '45'} | {new Date().toLocaleTimeString()}
-                              </p>
-                            </div>
-                            
-                            <div className="p-6 bg-white flex items-center gap-3 shrink-0 pb-8">
-                               <button onClick={handleFalseAlert} className="flex-1 py-3.5 bg-white border border-slate-200 text-slate-600 rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-colors hover:bg-slate-50">
-                                  FALSE ALERT
-                               </button>
-                               <button onClick={handleConfirmCritical} className="flex-[1.5] py-3.5 bg-[#8B0000] hover:bg-red-900 text-white rounded-2xl text-[11px] font-bold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-900/20">
-                                  <ShieldAlert className="w-4 h-4" /> CONFIRM CRITICAL
-                               </button>
-                            </div>
-                          </motion.div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <DoctorEmergencyModal
+                      activeEmergencyPatient={activeEmergencyPatient}
+                      isMuted={isMuted}
+                      onToggleMute={handleToggleMute}
+                      onClose={handleClosePopup}
+                      onIgnoreAlert={handleFalseAlert}
+                      onConfirmCritical={handleConfirmCritical}
+                      onViewPatient={handleViewPatient}
+                      onCallAmbulance={handleCallAmbulanceClick}
+                      isCallingAmbulance={isCallingAmbulance}
+                    />
 
                     {primaryPatient && (
                       <div className="bg-white border border-slate-200/60 rounded-[32px] p-6 shadow-sm relative overflow-hidden cursor-pointer" onClick={() => { emergencyService.stopSiren(); navigate(`/doctor/report/${primaryPatient.patient.id}`); }}>
