@@ -26,6 +26,7 @@ import { rtdb } from '../../shared/lib/firebase';
 import DoctorSidebar from '../components/DoctorSidebar';
 import VitalsCard from '../components/patient/VitalsCard';
 import ECGGraph from '../components/patient/ECGGraph';
+import DoctorEmergencyModal from '../components/DoctorEmergencyModal';
 import GoogleMapsTracker from '../components/GoogleMapsTracker';
 import { emergencyService, dispatchAmbulance, sendRealtimeWhatsAppEmergency } from '../../backend/services/emergencyService';
 import { locationService } from '../../backend/services/locationService';
@@ -706,155 +707,57 @@ const DoctorLiveMonitoring = () => {
     <div className="min-h-screen bg-[#F8FAFC] flex overflow-hidden font-sans" onClick={enableAudio}>
       <title>{isGlobalCritical ? '🚨 CRITICAL ALERT | HeartSync' : 'Live Telemetry | HeartSync'}</title>
 
-      {/* ─── Emergency Modal (2+ Critical Vitals) ─── */}
-      <AnimatePresence>
-        {showEmergencyModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm"
-            onClick={e => e.stopPropagation()}
-          >
-            <motion.div
-              initial={{ scale: 0.85, y: 40 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.85, y: 40 }}
-              transition={{ type: 'spring', damping: 18 }}
-              className="bg-white rounded-[32px] shadow-[0_30px_80px_rgba(128,0,0,0.3)] border-4 border-accent-maroon w-full max-w-lg overflow-hidden"
-            >
-              {/* Red Header */}
-              <div className="bg-accent-maroon px-8 py-6 flex items-center gap-5 relative">
-                <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center animate-pulse shrink-0">
-                  <ShieldAlert className="w-7 h-7 text-white" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/60 uppercase tracking-[0.2em]">HeartSync Medical Alert</p>
-                  <h2 className="text-xl font-black text-white tracking-tight">
-                    {'🚨 CRITICAL PATIENT DETECTED'}
-                  </h2>
-                </div>
-                <div className="ml-auto flex items-center gap-3">
-                  <button
-                    onClick={() => {
-                      const newAudioState = !audioEnabled;
-                      setAudioEnabled(newAudioState);
-                      if (!newAudioState) {
-                        emergencyService.stopSiren();
-                        sirenActive.current = false;
-                      } else {
-                        if (isCriticalPatient) {
-                          emergencyService.playSiren();
-                          sirenActive.current = true;
-                        }
-                      }
-                    }}
-                    className="w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all flex items-center justify-center text-lg shrink-0"
-                    title={audioEnabled ? "Mute Siren" : "Unmute Siren"}
-                  >
-                    {audioEnabled ? "🔊" : "🔇"}
-                  </button>
-                  <button
-                    onClick={handleCloseModal}
-                    className="w-10 h-10 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-all flex items-center justify-center shrink-0"
-                    title="Close Alert"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Vitals Summary */}
-              <div className="p-8 space-y-4">
-                <p className="text-xs text-slate-500 font-bold">
-                  All critical thresholds breached — Heart Rate, SpO₂, Temperature, and Humidity are at dangerous levels. Immediate life-saving intervention required.
-                </p>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: 'Heart Rate', value: `${bpm} BPM`, critical: isCriticalBPM },
-                    { label: 'Blood Oxygen', value: `${spo2}%`, critical: isCriticalSpo2 },
-                    { label: 'Temperature', value: `${temp.toFixed(1)}°C`, critical: isCriticalTemp },
-                    { label: 'Humidity', value: `${hum}%`, critical: isCriticalHum },
-                  ].map(item => (
-                    <div key={item.label} className={`p-4 rounded-2xl border ${item.critical ? 'bg-red-50 border-accent-maroon/30' : 'bg-slate-50 border-slate-100'}`}>
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">{item.label}</p>
-                      <p className={`text-xl font-black ${item.critical ? 'text-accent-maroon' : 'text-slate-900'}`}>{item.value}</p>
-                      {item.critical && <p className="text-[9px] font-black text-accent-maroon uppercase tracking-widest mt-1">⚠ CRITICAL</p>}
-                    </div>
-                  ))}
-                </div>
-
-                {/* ECG in modal */}
-                <div className="h-28 rounded-2xl overflow-hidden border border-slate-100 relative">
-                  <div className="absolute top-2 left-2 z-10 px-2 py-1 bg-slate-900/60 backdrop-blur-sm rounded text-[8px] font-black text-white uppercase tracking-widest">
-                    Live Waveform
-                  </div>
-                  <ECGGraph bpm={bpm} isEmergency={true} ecgData={vitals?.ecgData} isSensorConnected={!!vitals} isCritical={vitals?.condition === 'Critical' || vitals?.emergency} />
-                </div>
-
-                {/* AI Diagnosis Snippet */}
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">AI Diagnostic Report</p>
-                  <p className="text-sm font-bold text-slate-900">{diagnosis.title}</p>
-                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{diagnosis.desc}</p>
-                </div>
-
-                {/* Live Location Action */}
-                <div className="bg-accent-maroon/5 rounded-2xl p-4 border border-accent-maroon/10 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-accent-maroon/20 flex items-center justify-center">
-                      <MapPin className="w-4 h-4 text-accent-maroon animate-bounce" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-slate-900">Live Location Acquired</p>
-                      <p className="text-[10px] font-bold text-slate-500">Ready for ambulance dispatch routing</p>
-                    </div>
-                  </div>
-                  <span className="px-3 py-1 bg-accent-maroon text-white text-[9px] font-black uppercase tracking-widest rounded-full animate-pulse">
-                    Locked
-                  </span>
-                </div>
-
-                <p className="text-[9px] text-slate-400 font-bold text-center uppercase tracking-widest">
-                  Patient: {patientName} &nbsp;|&nbsp; Age: {patientAge} &nbsp;|&nbsp; {new Date(vitals?.timestamp || Date.now()).toLocaleTimeString()}
-                </p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="px-8 pb-8 grid grid-cols-3 gap-4">
-                <button
-                  onClick={handleRejectAlert}
-                  className="py-4 rounded-2xl border-2 border-slate-200 text-slate-600 font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
-                >
-                  FALSE ALERT
-                </button>
-                <button
-                  onClick={handleCallAmbulanceClick}
-                  disabled={isCallingAmbulance}
-                  className="py-4 rounded-2xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {isCallingAmbulance ? 'CALLING...' : 'CALL AMBULANCE'}
-                </button>
-                <button
-                  onClick={() => {
-                    emergencyService.stopSiren();
-                    sirenActive.current = false;
-                    setEmergencyHandled(true);
-                    setShowEmergencyModal(false);
-                    // Navigate directly to the patient's report details
-                    navigate(`/doctor/patient/${derivedActiveId}`);
-                  }}
-                  className="py-4 rounded-2xl bg-accent-maroon text-white font-black text-[10px] uppercase tracking-widest hover:bg-[#600000] transition-all shadow-xl shadow-accent-maroon/30 flex items-center justify-center gap-2 animate-pulse"
-                >
-                  <ShieldAlert className="w-4 h-4" />
-                  VIEW PATIENT
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* ─── Emergency Modal ─── */}
+      {showEmergencyModal && (
+        <DoctorEmergencyModal
+          activeEmergencyPatient={{
+            vitals: {
+              bpm,
+              spo2,
+              temperature_c: temp,
+              humidity: hum,
+              ecg: vitals?.ecgData,
+              timestamp: vitals?.timestamp,
+            },
+            patient: {
+              id: vitals?.serialNumber || derivedActiveId,
+              serialNumber: vitals?.serialNumber || derivedActiveId,
+              fullName: patientName,
+              profile: {
+                fullName: patientName,
+                age: patientAge,
+                gender: patientProfile?.profile?.gender || patientProfile?.gender || '',
+              },
+            },
+          }}
+          isMuted={!audioEnabled}
+          onToggleMute={() => {
+            const newAudioState = !audioEnabled;
+            setAudioEnabled(newAudioState);
+            if (!newAudioState) {
+              emergencyService.stopSiren();
+              sirenActive.current = false;
+            } else {
+              if (isCriticalPatient) {
+                emergencyService.playSiren();
+                sirenActive.current = true;
+              }
+            }
+          }}
+          onClose={handleCloseModal}
+          onIgnoreAlert={handleRejectAlert}
+          onConfirmCritical={handleAcceptEmergency}
+          onViewPatient={(patientId) => {
+            emergencyService.stopSiren();
+            sirenActive.current = false;
+            setEmergencyHandled(true);
+            setShowEmergencyModal(false);
+            navigate(`/doctor/patient/${patientId}`);
+          }}
+          onCallAmbulance={handleCallAmbulanceClick}
+          isCallingAmbulance={isCallingAmbulance}
+        />
+      )}
 
       <DoctorSidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
       

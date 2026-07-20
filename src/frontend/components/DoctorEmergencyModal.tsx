@@ -62,7 +62,8 @@ const DoctorEmergencyModalComponent: React.FC<DoctorEmergencyModalProps> = ({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.94, opacity: 0, y: 10 }}
           transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-          className="bg-white rounded-[24px] shadow-2xl w-[92%] max-w-[440px] overflow-hidden flex flex-col max-h-[85vh] border border-red-200"
+          style={{ width: 'min(90vw, 480px)', maxWidth: '480px', maxHeight: '80vh' }}
+          className="bg-white rounded-[24px] shadow-2xl overflow-hidden flex flex-col border border-red-200"
         >
           {/* Header */}
           <div className="bg-gradient-to-r from-red-700 to-red-900 p-4 sm:p-5 relative shrink-0 text-white">
